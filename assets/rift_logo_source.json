@@ -1,0 +1,13 @@
+{
+  "source": "User-supplied Rift Hub logo",
+  "sha256": "92145dc6000c9031638e113647e1e6fecf375083f68fcd00227f597a8912ebed",
+  "width": 1254,
+  "height": 1254,
+  "mark_rect": [
+    374,
+    298,
+    520,
+    520
+  ],
+  "note": "Original JPEG bytes retained. Compact controls use a centered square crop with normalized UI clipping."
+}
