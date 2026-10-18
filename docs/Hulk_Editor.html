@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rift Hulk — editable full script</title><style>
 :root{color-scheme:dark;font-family:system-ui;background:#0e1711;color:#e5efe7}body{max-width:1000px;margin:auto;padding:20px}h1{font-size:24px}p{color:#afc7b5;line-height:1.5}.tools{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}button{background:#28643b;color:white;border:1px solid #428a54;border-radius:8px;padding:12px 18px;font:600 14px system-ui}textarea{box-sizing:border-box;width:100%;height:65vh;min-height:320px;padding:14px;background:#111e16;color:#e3efe6;border:1px solid #355540;border-radius:10px;font:13px/1.6 ui-monospace,monospace;tab-size:4;white-space:pre}#status{min-height:28px;color:#a8eaba}</style></head><body>
-<h1>Rift Hub / Hulk</h1><p>Complete standalone script. Hold LEAP to charge, then release to launch. Pose: Auto tries your animation IDs and uses built-in poses when clips cannot load or match the rig. Pose: Built-in forces the local joint poses. Use Copy animation report if something looks wrong.</p>
-<div class="tools"><button id="copy">Copy all code</button><button id="select">Select all</button><button id="download">Download .lua</button></div><div id="status" role="status" aria-live="polite">The full script below is editable.</div><textarea id="source" aria-label="Full editable Luau script" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off">-- Rift Hub / Hulk / 1.3 | standalone hold-to-charge leap
+<h1>Rift Hub / Hulk</h1><p>Complete standalone script. Hold LEAP to charge, then release to launch. At 100%, release for a much longer leap using CS_Leap. Pose: Auto tries your animation IDs and uses built-in poses when clips cannot load or match the rig. Pose: Built-in forces the local joint poses. Use Copy animation report if something looks wrong.</p>
+<div class="tools"><button id="copy">Copy all code</button><button id="select">Select all</button><button id="download">Download .lua</button></div><div id="status" role="status" aria-live="polite">The full script below is editable.</div><textarea id="source" aria-label="Full editable Luau script" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off">-- Rift Hub / Hulk / 1.4 | standalone hold-to-charge leap
 -- All controller code is embedded here; only the user logo is downloaded.
 local env = type(getgenv) == &quot;function&quot; and getgenv() or _G
 local existing = env.RiftHulkCharacter
@@ -236,12 +236,19 @@ return function(Utils, Kit, PoseCtor, Brand)
 	local RunService = game:GetService(&quot;RunService&quot;)
 	local UIS = game:GetService(&quot;UserInputService&quot;)
 	local player = Players.LocalPlayer
+	local animationIds = {
+		Idle = &quot;rbxassetid://180435571&quot;, CS_Leap = &quot;rbxassetid://74095507765093&quot;,
+		Walk = &quot;rbxassetid://180426354&quot;, Fall = &quot;rbxassetid://180436148&quot;,
+		CS_Downslam = &quot;rbxassetid://113926956994381&quot;, KS_ChaseSlam = &quot;rbxassetid://107995270438202&quot;,
+	}
 	local M = {
 		Enabled = false, Phase = &quot;off&quot;, Power = 0, LastError = nil, AnimationMode = &quot;Auto&quot;,
+		AnimationIds = animationIds, -- Other supplied clips are saved for future moves.
 		AnimationStatus = { Crouch=&quot;Not requested&quot;, Leap=&quot;Not requested&quot; },
 		AssetErrors = {}, ButtonPresses=0, Releases=0, Launches=0, LastInput=&quot;None&quot;, Motion={Status=&quot;No launch requested&quot;},
 		Config = { ChargeSeconds = 2.2, MinUp = 55, MaxUp = 140, MinForward = 40, MaxForward = 125,
-			CrouchAnimation = &quot;rbxassetid://99086193071059&quot;, LeapAnimation = &quot;rbxassetid://74116059836265&quot;,
+			FullChargeUp = 180, FullChargeForward = 300,
+			CrouchAnimation = &quot;rbxassetid://99086193071059&quot;, LeapAnimation = animationIds.CS_Leap,
 			CrouchPoseFraction = 0.5 },
 	}
 	local stopped, connections, tracks = false, {}, {}
@@ -294,11 +301,11 @@ return function(Utils, Kit, PoseCtor, Brand)
 	local function paint(text)
 		if not gui then return end
 		fill.Size = UDim2.fromScale(1, M.Power)
-		percent.Text = tostring(math.floor(M.Power * 100 + 0.5)) .. &quot;%&quot;
-		leapButton.Text = M.Phase == &quot;charging&quot; and (M.Power &gt;= 1 and &quot;RELEASE\nTO LEAP&quot; or &quot;CHARGING&quot;)
+		percent.Text = tostring(math.floor(M.Power * 100)) .. &quot;%&quot;
+		leapButton.Text = M.Phase == &quot;charging&quot; and (M.Power &gt;= 1 and &quot;RELEASE\nLONG LEAP&quot; or &quot;CHARGING&quot;)
 			or M.Phase == &quot;airborne&quot; and &quot;LEAPING&quot; or &quot;HOLD\nLEAP&quot;
 		leapButton.BackgroundColor3 = M.Phase == &quot;charging&quot; and Color3.fromRGB(55, 132, 73) or Color3.fromRGB(34, 71, 45)
-		caption.Text = text or (M.Phase == &quot;charging&quot; and &quot;Release to launch&quot; or M.Phase == &quot;airborne&quot; and &quot;In the air&quot; or &quot;Hold to charge · release to leap&quot;)
+		caption.Text = text or (M.Phase == &quot;charging&quot; and (M.Power &gt;= 1 and &quot;Maximum power · release!&quot; or &quot;Release to launch&quot;) or M.Phase == &quot;airborne&quot; and &quot;In the air&quot; or &quot;Hold to charge · release to leap&quot;)
 	end
 	cancel = function(text)
 		activeInput, chargeStart = nil, nil
@@ -511,6 +518,12 @@ return function(Utils, Kit, PoseCtor, Brand)
 		direction = direction.Unit
 		local upward = M.Config.MinUp + (M.Config.MaxUp - M.Config.MinUp) * power
 		local forward = M.Config.MinForward + (M.Config.MaxForward - M.Config.MinForward) * power
+		-- Smoothly add the long-leap bonus in the final 20% of the charge.
+		-- Half-charge movement stays the same; holding longer than full never stacks impulses.
+		local boost = math.clamp((power - 0.8) / 0.2, 0, 1)
+		boost = boost * boost * (3 - 2 * boost)
+		upward += math.max(0, M.Config.FullChargeUp - M.Config.MaxUp) * boost
+		forward += math.max(0, M.Config.FullChargeForward - M.Config.MaxForward) * boost
 		local targetVelocity = direction * forward + Vector3.new(0, upward, 0)
 		local ok, err = pcall(function()
 			local mass = root.AssemblyMass
@@ -520,7 +533,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		end)
 		if not ok then M.LastError = tostring(err); cancel(&quot;Leap could not launch&quot;); return end
 		M.Launches += 1
-		M.Motion={Status=&quot;Impulse applied; observing travel&quot;,Root=root,Origin=root.Position,Started=os.clock(),Requested=targetVelocity,Peak=0,Latest=0}
+		M.Motion={Status=&quot;Impulse applied; observing travel&quot;,Root=root,Origin=root.Position,Started=os.clock(),Requested=targetVelocity,Power=power,Peak=0,Latest=0}
 
 		if not jumpAttempted then jump = loadTrack(char, hum, M.Config.LeapAnimation, &quot;Leap&quot;); jumpAttempted = true end
 		if jump then
@@ -559,7 +572,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		end
 		Kit.create(&quot;TextLabel&quot;, { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face(&quot;BuilderSans&quot;, Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = &quot;HULK / LEAP · 1.3&quot;, TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = &quot;HULK / LEAP · 1.4&quot;, TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create(&quot;TextButton&quot;, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = &quot;×&quot;, TextSize = 20, TextColor3 = Kit.SUB }, dock)
 		leapButton = Kit.create(&quot;TextButton&quot;, { Name = &quot;HoldLeap&quot;, Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(118, 82),
@@ -571,7 +584,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		Kit.create(&quot;UICorner&quot;, { CornerRadius = UDim.new(0, 5) }, bar)
 		fill = Kit.create(&quot;Frame&quot;, { Name = &quot;PowerFill&quot;, AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0),
 			BackgroundColor3 = Color3.fromRGB(99, 217, 124), BorderSizePixel = 0 }, bar)
-		percent = Kit.create(&quot;TextLabel&quot;, { Position = UDim2.fromOffset(158, 61), Size = UDim2.fromOffset(32, 26), BackgroundTransparency = 1,
+		percent = Kit.create(&quot;TextLabel&quot;, { Name = &quot;ChargePercent&quot;, Position = UDim2.fromOffset(158, 61), Size = UDim2.fromOffset(32, 26), BackgroundTransparency = 1,
 			FontFace = Kit.face(&quot;BuilderSans&quot;, Enum.FontWeight.Bold), TextSize = 10, TextColor3 = Kit.INK, Text = &quot;0%&quot; }, dock)
 		caption = Kit.create(&quot;TextLabel&quot;, { Position = UDim2.fromOffset(10, 125), Size = UDim2.new(1, -20, 0, 23), BackgroundTransparency = 1,
 			FontFace = Kit.face(&quot;BuilderSans&quot;), TextSize = 10, TextColor3 = Kit.SUB, TextWrapped = true, Text = &quot;Hold to charge · release to leap&quot; }, dock)
@@ -651,8 +664,9 @@ return function(Utils, Kit, PoseCtor, Brand)
 			if type(message)~=&quot;string&quot; or message:find(&quot;Rift Hub / Hulk&quot;,1,true) then return end
 			local lower=message:lower()
 			if not (lower:find(&quot;fail&quot;,1,true) or lower:find(&quot;error&quot;,1,true) or lower:find(&quot;permission&quot;,1,true) or lower:find(&quot;not authorized&quot;,1,true)) then return end
-			for label,id in pairs({Crouch=&quot;99086193071059&quot;,Leap=&quot;74116059836265&quot;}) do
-				if message:find(id,1,true) then M.AssetErrors[label]=message:gsub(&quot;[%c]&quot;,&quot; &quot;):sub(1,500) end
+			for label,asset in pairs({Crouch=M.Config.CrouchAnimation,Leap=M.Config.LeapAnimation}) do
+				local id = asset:match(&quot;%d+&quot;)
+				if id and message:find(id,1,true) then M.AssetErrors[label]=message:gsub(&quot;[%c]&quot;,&quot; &quot;):sub(1,500) end
 			end
 		end,&quot;Animation log observer&quot;)
 	end
@@ -689,7 +703,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		local function safeText(get)
 			local ok,value=pcall(get);return ok and tostring(value) or &quot;unavailable&quot;
 		end
-		return table.concat({&quot;Rift Hub / Hulk / 1.3&quot;, &quot;Phase: &quot; .. M.Phase .. &quot; | pose mode: &quot; .. M.AnimationMode,
+		return table.concat({&quot;Rift Hub / Hulk / 1.4&quot;, &quot;Phase: &quot; .. M.Phase .. &quot; | pose mode: &quot; .. M.AnimationMode,
 			&quot;Rig: &quot; .. (hum and tostring(hum.RigType) or &quot;none&quot;),
 			&quot;Inputs: presses=&quot; .. M.ButtonPresses .. &quot; | releases=&quot; .. M.Releases .. &quot; | launches=&quot; .. M.Launches .. &quot; | last=&quot; .. M.LastInput,
 			&quot;Character: &quot; .. safeText(function() return char:GetFullName() end),
@@ -697,8 +711,8 @@ return function(Utils, Kit, PoseCtor, Brand)
 				.. &quot; | anchored=&quot; .. safeText(function() return root.Anchored end) .. &quot; | PlatformStand=&quot; .. safeText(function() return hum.PlatformStand end),
 			&quot;Locks: canRun=&quot; .. safeText(function() return char:GetAttribute(&quot;canRun&quot;) end) .. &quot; | LOCKED_INPUTS=&quot; .. safeText(function() return char:GetAttribute(&quot;LOCKED_INPUTS&quot;) end)
 				.. &quot; | cutsceneLock=&quot; .. safeText(function() return char:GetAttribute(&quot;cutsceneLock&quot;) end),
-			&quot;Crouch 99086193071059: &quot; .. M.AnimationStatus.Crouch,
-			&quot;Leap 74116059836265: &quot; .. M.AnimationStatus.Leap,
+			&quot;Crouch &quot; .. M.Config.CrouchAnimation .. &quot;: &quot; .. M.AnimationStatus.Crouch,
+			&quot;Leap &quot; .. M.Config.LeapAnimation .. &quot;: &quot; .. M.AnimationStatus.Leap,
 			&quot;Crouch playback: playing=&quot; .. safeText(function() return crouch.IsPlaying end) .. &quot; | length=&quot; .. safeText(function() return crouch.Length end)
 				.. &quot; | weight=&quot; .. safeText(function() return crouch.WeightCurrent end) .. &quot; | time=&quot; .. safeText(function() return crouch.TimePosition end),
 			&quot;Leap playback: playing=&quot; .. safeText(function() return jump.IsPlaying end) .. &quot; | length=&quot; .. safeText(function() return jump.Length end)
@@ -709,6 +723,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 			&quot;Last runtime error: &quot; .. tostring(M.LastRuntimeError),
 			&quot;Movement observation: &quot; .. M.Motion.Status .. &quot; | peak travel=&quot; .. string.format(&quot;%.2f&quot;,M.Motion.Peak or 0) .. &quot; studs&quot;,
 			&quot;Requested launch velocity: &quot; .. tostring(M.Motion.Requested),
+			&quot;Launch charge: &quot; .. string.format(&quot;%.1f%%&quot;, (M.Motion.Power or 0) * 100),
 			&quot;Roblox crouch error: &quot; .. tostring(M.AssetErrors.Crouch), &quot;Roblox leap error: &quot; .. tostring(M.AssetErrors.Leap),
 			&quot;Rig binding, asset access, and playback are client observations; server movement acceptance is unverified.&quot;}, &quot;\n&quot;)
 	end
@@ -728,7 +743,7 @@ end)()
 local brand=BrandCtor(&quot;https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/assets/rift_logo.jpg&quot;)
 local api=LeapCtor(Utils,Kit,PoseCtor,brand)
 api.Game=&quot;Hulk&quot;
-api.Version=&quot;1.3&quot;
+api.Version=&quot;1.4&quot;
 local stop=api.Stop
 function api.Unload()
  stop()

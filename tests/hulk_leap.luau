@@ -138,8 +138,8 @@ check(player.Character.root.impulses==0,"full charge launched while still held")
 check(m.SetEnabled(true) and m.Phase=="charging","opening existing controls reset an active charge")
 UIS.InputEnded:Fire(a)
 check(m.Phase=="airborne" and player.Character.root.impulses==1,"release did not launch exactly once")
-near(player.Character.root.AssemblyLinearVelocity.Y,140);near(player.Character.root.AssemblyLinearVelocity.Z,-125)
-check(not squat.IsPlaying and animationTracks[2].Id=="rbxassetid://74116059836265","launch animation missing")
+near(player.Character.root.AssemblyLinearVelocity.Y,180);near(player.Character.root.AssemblyLinearVelocity.Z,-300)
+check(not squat.IsPlaying and animationTracks[2].Id=="rbxassetid://74095507765093","launch animation missing")
 UIS.InputEnded:Fire(a);button.InputBegan:Fire(b)
 check(player.Character.root.impulses==1 and m.Phase=="airborne","repeated release or midair input launched twice")
 land(m)
@@ -149,6 +149,31 @@ local c=mouse();button.InputBegan:Fire(c);step(1.1);UIS.InputEnded:Fire(mouse())
 near(player.Character.root.AssemblyLinearVelocity.X,82.5);near(player.Character.root.AssemblyLinearVelocity.Y,97.5);near(player.Character.root.AssemblyLinearVelocity.Z,0)
 near(player.Character.hum.WalkSpeed,24)
 land(m)
+-- Strong launch builds smoothly at the top of the bar, is capped, and displays honest percentages.
+local previousForward,previousUp=0,0
+for _,power in ipairs({0.8,0.9,0.999,1,2}) do
+ button.InputBegan:Fire(a);step(2.2*power)
+ local charge=math.clamp(power,0,1)
+ near(m.Power,charge)
+ -- Clock subtraction can differ by an ulp at the exact boundary.
+ if power==0.999 then check(widget("ChargePercent").Text=="99%","bar showed full power before full charge") end
+ local before=player.Character.root.impulses
+ UIS.InputEnded:Fire(a)
+ local velocity=player.Character.root.AssemblyLinearVelocity
+ check(player.Character.root.impulses==before+1,"long leap did not use one impulse")
+ check(velocity.X>=previousForward-.00001 and velocity.Y>=previousUp-.00001,"top charge strength was not monotonic")
+ if power==0.8 then near(velocity.X,108);near(velocity.Y,123) end
+ if power==0.9 then near(velocity.X,204);near(velocity.Y,151.5) end
+ if power>=1 then near(velocity.X,300);near(velocity.Y,180) end
+ previousForward,previousUp=velocity.X,velocity.Y
+ land(m)
+end
+check(m.AnimationIds.Idle=="rbxassetid://180435571" and m.AnimationIds.CS_Leap==m.Config.LeapAnimation
+ and m.AnimationIds.Walk=="rbxassetid://180426354" and m.AnimationIds.Fall=="rbxassetid://180436148"
+ and m.AnimationIds.CS_Downslam=="rbxassetid://113926956994381" and m.AnimationIds.KS_ChaseSlam=="rbxassetid://107995270438202","supplied animation references lost")
+logs.MessageOut:Fire("Failed to load animation rbxassetid://74095507765093")
+check(m.AssetErrors.Leap and m.AssetErrors.Leap:find("74095507765093",1,true),"new leap asset error was not captured")
+check(m.Diagnostics():find("Leap rbxassetid://74095507765093:",1,true),"report showed old leap ID")
 local count=player.Character.root.impulses
 button.InputBegan:Fire(a);step(.3);UIS.WindowFocusReleased:Fire();UIS.InputEnded:Fire(a)
 check(m.Phase=="ready" and player.Character.root.impulses==count,"focus loss launched instead of cancelling")
