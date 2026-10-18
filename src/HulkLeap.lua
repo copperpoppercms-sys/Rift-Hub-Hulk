@@ -126,14 +126,25 @@ return function(Utils, Kit, PoseCtor, Brand)
 			local rig = tostring(hum.RigType)
 			if (targetR6 and rig:find("R15",1,true)) or (targetR15 and rig:find("R6",1,true)) then
 				slot.Binding = "Rig mismatch"
-			elseif targetR6 or targetR15 then slot.Binding = "Compatible body targets"
-			else slot.Binding = "Binding unverified" end
+			elseif targetR6 or targetR15 then
+				slot.Binding = "Compatible body targets"
+			else
+				-- GetTargetNames found nothing matching a standard R6/R15 name. That's
+				-- not evidence the clip is wrong -- it's exactly what a custom hero
+				-- model (Hulk is a reskinned character, not your default avatar) looks
+				-- like, since its parts aren't named Torso/UpperArm/etc. The old code
+				-- treated "I can't verify this" as "reject it," which meant the real
+				-- uploaded clip could NEVER play on a custom rig, only ever the
+				-- built-in fallback pose -- even though the clip had already loaded
+				-- fine (Length > 0) and was presumably authored for this exact rig.
+				slot.Binding = "Compatible, unverified rig"
+			end
 		end
-		if slot.Binding ~= "Compatible body targets" then
+		if slot.Binding == "Rig mismatch" then
 			M.AnimationStatus[slot.Label] = slot.Binding .. "; using built-in pose"
 			return false
 		end
-		M.AnimationStatus[slot.Label] = "Clip ready, length=" .. string.format("%.3f",track.Length)
+		M.AnimationStatus[slot.Label] = "Clip ready (" .. slot.Binding .. "), length=" .. string.format("%.3f", track.Length)
 		return true
 	end
 	local function ensurePose(char)
@@ -191,6 +202,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 			jump=loadTrack(char,hum,M.Config.LeapAnimation,"Leap");jumpAttempted=true
 			if jump then pcall(function() jump:Play(0,0,1) end) end
 		end
+		pcall(ensurePose, char) -- so the joint count is already known before the first charge, not just reported as 0
 	end
 	local function begin(input)
 		if stopped or not M.Enabled or M.Phase ~= "ready" or activeInput then return end
@@ -395,7 +407,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 			"Rig: " .. (hum and tostring(hum.RigType) or "none"),
 			"Crouch 99086193071059: " .. M.AnimationStatus.Crouch,
 			"Leap 74116059836265: " .. M.AnimationStatus.Leap,
-			"Built-in joints: " .. tostring(pose and pose.Count or 0),
+			"Built-in joints: " .. tostring(pose and pose.Count or 0) .. " (" .. (pose and pose.Describe and pose.Describe() or "pose not initialized yet") .. ")",
 			"Current animation: " .. tostring(animationNote), "Last movement error: " .. tostring(M.LastError),
 			"Rig binding, asset access, and playback are client observations; server movement acceptance is unverified."}, "\n")
 	end

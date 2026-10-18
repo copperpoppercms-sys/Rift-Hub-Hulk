@@ -26,16 +26,47 @@ return function(character)
 	local M = { Count = 0, Rig = "Custom" }
 	local hum = character:FindFirstChildOfClass("Humanoid")
 	if hum then M.Rig = tostring(hum.RigType):match("R%d+") or "Custom" end
-	local roles = { rootjoint="root", root="root", waist="waist", neck="neck",
+	local exactRoles = { rootjoint="root", root="root", waist="waist", neck="neck",
 		lefthip="hip", righthip="hip", leftknee="knee", rightknee="knee",
 		leftankle="ankle", rightankle="ankle", leftshoulder="shoulder", rightshoulder="shoulder",
-		leftelbow="elbow", rightelbow="elbow" }
+		leftelbow="elbow", rightelbow="elbow", leftwrist="wrist", rightwrist="wrist" }
+	-- checked in order, first match wins -- covers a custom-named rig (a reskinned
+	-- hero model, not your default avatar) whose joints don't use stock R6/R15 names
+	local substringRoles = {
+		{ "shoulder", "shoulder" }, { "elbow", "elbow" }, { "wrist", "wrist" },
+		{ "hip", "hip" }, { "knee", "knee" }, { "ankle", "ankle" },
+		{ "waist", "waist" }, { "spine", "waist" }, { "neck", "neck" }, { "root", "root" },
+	}
+	local function classify(joint)
+		local key = joint.Name:lower():gsub("[%s_%-]", "")
+		if exactRoles[key] then return exactRoles[key] end
+		for _, pair in ipairs(substringRoles) do
+			if key:find(pair[1], 1, true) then return pair[2] end
+		end
+		if joint.Part0 and joint.Part0.Name == "HumanoidRootPart" then return "root" end
+		-- last resort: the joint's own name told us nothing, so guess from the limb
+		-- it bends -- a custom rig's parts are still usually named sensibly even
+		-- when its joints aren't
+		local part1 = joint.Part1 and joint.Part1.Name:lower() or ""
+		if part1:find("arm", 1, true) then return "shoulder" end
+		if part1:find("leg", 1, true) or part1:find("thigh", 1, true) or part1:find("shin", 1, true) then return "hip" end
+		if part1:find("torso", 1, true) or part1:find("spine", 1, true) then return "waist" end
+		if part1:find("head", 1, true) then return "neck" end
+		return nil
+	end
 	for _, joint in ipairs(character:GetDescendants()) do
 		if joint:IsA("Motor6D") and joint.Part0 and joint.Part1 then
-			local role = roles[joint.Name:lower():gsub("[%s_]", "")]
-			if not role and joint.Part0.Name == "HumanoidRootPart" then role = "root" end
+			local role = classify(joint)
 			if role then table.insert(joints, { Joint=joint, Role=role }); M.Count += 1 end
 		end
+	end
+	function M.Describe()
+		if #joints == 0 then return "no Motor6D joints matched" end
+		local parts = {}
+		for _, entry in ipairs(joints) do
+			table.insert(parts, entry.Joint.Name .. ":" .. entry.Role)
+		end
+		return table.concat(parts, ", ")
 	end
 	function M.Restore()
 		for _, entry in ipairs(joints) do
@@ -265,14 +296,25 @@ return function(Utils, Kit, PoseCtor, Brand)
 			local rig = tostring(hum.RigType)
 			if (targetR6 and rig:find("R15",1,true)) or (targetR15 and rig:find("R6",1,true)) then
 				slot.Binding = "Rig mismatch"
-			elseif targetR6 or targetR15 then slot.Binding = "Compatible body targets"
-			else slot.Binding = "Binding unverified" end
+			elseif targetR6 or targetR15 then
+				slot.Binding = "Compatible body targets"
+			else
+				-- GetTargetNames found nothing matching a standard R6/R15 name. That's
+				-- not evidence the clip is wrong -- it's exactly what a custom hero
+				-- model (Hulk is a reskinned character, not your default avatar) looks
+				-- like, since its parts aren't named Torso/UpperArm/etc. The old code
+				-- treated "I can't verify this" as "reject it," which meant the real
+				-- uploaded clip could NEVER play on a custom rig, only ever the
+				-- built-in fallback pose -- even though the clip had already loaded
+				-- fine (Length > 0) and was presumably authored for this exact rig.
+				slot.Binding = "Compatible, unverified rig"
+			end
 		end
-		if slot.Binding ~= "Compatible body targets" then
+		if slot.Binding == "Rig mismatch" then
 			M.AnimationStatus[slot.Label] = slot.Binding .. "; using built-in pose"
 			return false
 		end
-		M.AnimationStatus[slot.Label] = "Clip ready, length=" .. string.format("%.3f",track.Length)
+		M.AnimationStatus[slot.Label] = "Clip ready (" .. slot.Binding .. "), length=" .. string.format("%.3f", track.Length)
 		return true
 	end
 	local function ensurePose(char)
@@ -330,6 +372,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 			jump=loadTrack(char,hum,M.Config.LeapAnimation,"Leap");jumpAttempted=true
 			if jump then pcall(function() jump:Play(0,0,1) end) end
 		end
+		pcall(ensurePose, char) -- so the joint count is already known before the first charge, not just reported as 0
 	end
 	local function begin(input)
 		if stopped or not M.Enabled or M.Phase ~= "ready" or activeInput then return end
@@ -534,7 +577,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 			"Rig: " .. (hum and tostring(hum.RigType) or "none"),
 			"Crouch 99086193071059: " .. M.AnimationStatus.Crouch,
 			"Leap 74116059836265: " .. M.AnimationStatus.Leap,
-			"Built-in joints: " .. tostring(pose and pose.Count or 0),
+			"Built-in joints: " .. tostring(pose and pose.Count or 0) .. " (" .. (pose and pose.Describe and pose.Describe() or "pose not initialized yet") .. ")",
 			"Current animation: " .. tostring(animationNote), "Last movement error: " .. tostring(M.LastError),
 			"Rig binding, asset access, and playback are client observations; server movement acceptance is unverified."}, "\n")
 	end

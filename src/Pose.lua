@@ -6,16 +6,47 @@ return function(character)
 	local M = { Count = 0, Rig = "Custom" }
 	local hum = character:FindFirstChildOfClass("Humanoid")
 	if hum then M.Rig = tostring(hum.RigType):match("R%d+") or "Custom" end
-	local roles = { rootjoint="root", root="root", waist="waist", neck="neck",
+	local exactRoles = { rootjoint="root", root="root", waist="waist", neck="neck",
 		lefthip="hip", righthip="hip", leftknee="knee", rightknee="knee",
 		leftankle="ankle", rightankle="ankle", leftshoulder="shoulder", rightshoulder="shoulder",
-		leftelbow="elbow", rightelbow="elbow" }
+		leftelbow="elbow", rightelbow="elbow", leftwrist="wrist", rightwrist="wrist" }
+	-- checked in order, first match wins -- covers a custom-named rig (a reskinned
+	-- hero model, not your default avatar) whose joints don't use stock R6/R15 names
+	local substringRoles = {
+		{ "shoulder", "shoulder" }, { "elbow", "elbow" }, { "wrist", "wrist" },
+		{ "hip", "hip" }, { "knee", "knee" }, { "ankle", "ankle" },
+		{ "waist", "waist" }, { "spine", "waist" }, { "neck", "neck" }, { "root", "root" },
+	}
+	local function classify(joint)
+		local key = joint.Name:lower():gsub("[%s_%-]", "")
+		if exactRoles[key] then return exactRoles[key] end
+		for _, pair in ipairs(substringRoles) do
+			if key:find(pair[1], 1, true) then return pair[2] end
+		end
+		if joint.Part0 and joint.Part0.Name == "HumanoidRootPart" then return "root" end
+		-- last resort: the joint's own name told us nothing, so guess from the limb
+		-- it bends -- a custom rig's parts are still usually named sensibly even
+		-- when its joints aren't
+		local part1 = joint.Part1 and joint.Part1.Name:lower() or ""
+		if part1:find("arm", 1, true) then return "shoulder" end
+		if part1:find("leg", 1, true) or part1:find("thigh", 1, true) or part1:find("shin", 1, true) then return "hip" end
+		if part1:find("torso", 1, true) or part1:find("spine", 1, true) then return "waist" end
+		if part1:find("head", 1, true) then return "neck" end
+		return nil
+	end
 	for _, joint in ipairs(character:GetDescendants()) do
 		if joint:IsA("Motor6D") and joint.Part0 and joint.Part1 then
-			local role = roles[joint.Name:lower():gsub("[%s_]", "")]
-			if not role and joint.Part0.Name == "HumanoidRootPart" then role = "root" end
+			local role = classify(joint)
 			if role then table.insert(joints, { Joint=joint, Role=role }); M.Count += 1 end
 		end
+	end
+	function M.Describe()
+		if #joints == 0 then return "no Motor6D joints matched" end
+		local parts = {}
+		for _, entry in ipairs(joints) do
+			table.insert(parts, entry.Joint.Name .. ":" .. entry.Role)
+		end
+		return table.concat(parts, ", ")
 	end
 	function M.Restore()
 		for _, entry in ipairs(joints) do
