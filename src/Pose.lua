@@ -129,17 +129,23 @@ return function(character)
 		M.Restore();M.AppliedCount=0
 		if not phase then return end
 		local crouching=phase=="charging"
+		local armsOnly=phase=="airborne-arms"
 		local alpha=crouching and power or 1
 		local angles=crouching and {root=-10,waist=-10,neck=12,hip=45,knee=-85,ankle=40,shoulder=35,elbow=-35}
-			or {root=-12,waist=-8,neck=15,hip=25,knee=-50,ankle=25,shoulder=145,elbow=-25}
+			or {root=-12,waist=-8,neck=15,hip=25,knee=-50,ankle=25,shoulder=105,elbow=20,wrist=0}
 		for _,entry in ipairs(joints) do
 			local ok,err=pcall(function()
 				local joint=entry.Joint
 				if not joint.Parent then return end
+				local arm=entry.Role=="shoulder" or entry.Role=="elbow" or entry.Role=="wrist"
+				if armsOnly and not arm then return end
 				local down=crouching and entry.Role=="root" and -(M.Rig=="R6" and .55 or .9)*alpha or 0
 				local rotation=entry.Rest().Rotation
 				local delta=rotation:Inverse()*CFrame.new(0,down,0)*CFrame.Angles(math.rad(angles[entry.Role] or 0)*alpha,0,0)*rotation
-				entry.Base=joint.Transform;entry.Applied=delta*entry.Base
+				entry.Base=joint.Transform
+				-- Use a rest-relative arm pose while airborne. Adding it to the clip's
+				-- shoulder/elbow motion can bend arms behind the body or fold them twice.
+				entry.Applied=(not crouching and arm) and delta or delta*entry.Base
 				joint.Transform=entry.Applied;M.AppliedCount+=1
 			end)
 			if not ok then M.LastError=entry.Joint.Name..": "..tostring(err) end

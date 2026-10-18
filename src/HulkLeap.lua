@@ -195,14 +195,15 @@ return function(Utils, Kit, PoseCtor, Brand)
 			end
 		end
 		if pose then
-			if useClip then pose.Set(nil)
+			if useClip then
+				if charging then pose.Set(nil) else pose.Set("airborne-arms") end
 			else
 				if track and track.Length > 0 then stopTrack(track) end
 				pose.Set(charging and "charging" or "airborne", M.Power)
 			end
 		end
 		M.LastPoseError = pose and pose.LastError or M.LastPoseError
-		animationNote = useClip and "Animation clip" or M.LastPoseError and "Pose error · Copy report" or pose and pose.Count > 0 and "Built-in pose" or "No compatible body joints"
+		animationNote = useClip and (charging and "Animation clip" or "Animation clip · forward arms") or M.LastPoseError and "Pose error · Copy report" or pose and pose.Count > 0 and "Built-in pose" or "No compatible body joints"
 	end
 	local function prepareAnimations()
 		local char, hum, root=body()
@@ -340,7 +341,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		end
 		Kit.create("TextLabel", { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = "HULK / LEAP · 1.4", TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = "HULK / LEAP · 1.5", TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = "×", TextSize = 20, TextColor3 = Kit.SUB }, dock)
 		leapButton = Kit.create("TextButton", { Name = "HoldLeap", Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(118, 82),
@@ -471,7 +472,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		local function safeText(get)
 			local ok,value=pcall(get);return ok and tostring(value) or "unavailable"
 		end
-		return table.concat({"Rift Hub / Hulk / 1.4", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
+		return table.concat({"Rift Hub / Hulk / 1.5", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
 			"Rig: " .. (hum and tostring(hum.RigType) or "none"),
 			"Inputs: presses=" .. M.ButtonPresses .. " | releases=" .. M.Releases .. " | launches=" .. M.Launches .. " | last=" .. M.LastInput,
 			"Character: " .. safeText(function() return char:GetFullName() end),

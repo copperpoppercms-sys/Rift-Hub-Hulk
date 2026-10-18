@@ -5,7 +5,7 @@ root=Path(__file__).parent
 pose=(root/'src/Pose.lua').read_text()
 leap=(root/'src/HulkLeap.lua').read_text()
 brand=(root/'src/Brand.lua').read_text()
-source='''-- Rift Hub / Hulk / 1.4 | standalone hold-to-charge leap
+source='''-- Rift Hub / Hulk / 1.5 | standalone hold-to-charge leap
 -- All controller code is embedded here; only the user logo is downloaded.
 local env = type(getgenv) == "function" and getgenv() or _G
 local existing = env.RiftHulkCharacter
@@ -33,7 +33,7 @@ local LeapCtor=(function()
 local brand=BrandCtor("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/assets/rift_logo.jpg")
 local api=LeapCtor(Utils,Kit,PoseCtor,brand)
 api.Game="Hulk"
-api.Version="1.4"
+api.Version="1.5"
 local stop=api.Stop
 function api.Unload()
  stop()

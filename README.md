@@ -14,6 +14,7 @@ Hold **LEAP** to charge for up to 2.2 seconds. The adjacent bar shows power, and
 - Leap animation: **CS_Leap**, ID `74095507765093`.
 - Clips are primed at normal playback speed with zero weight before use. They stay alive during a bounded loading window and explicitly regain full weight when used. Their Animation instances remain alive while Roblox loads them.
 - **Pose: Auto** uses a clip when it has loaded and its body targets match the rig. A zero-length, failed or clearly mismatched clip uses a local joint pose instead. Clips with unrecognized target names are tried rather than rejected; target compatibility remains unverified. Late-loading compatible clips can replace the fallback cleanly.
+- During a leap, shoulders, elbows and wrists use a fixed forward pose after Animator updates, including when CS_Leap plays. These arm transforms replace the animated arm rotation instead of stacking on top of it. The clip still controls the rest of the body; crouching uses its existing animation or fallback. Landing, cancellation and unloading restore the prior arm transforms.
 - **Pose: Built-in** forces the local poses. R15 rigs bend at the hips and knees; R6 rigs use their available torso, hip and shoulder joints. Version 1.3 supports legacy `Motor6D`, newer `AnimationConstraint` rigs and skinned `Bone` hierarchies. It rescans newly loaded joints and incomplete attachment bindings.
 - **Copy animation report** includes rig type, clip readiness or error, fallback joint count, current phase and movement errors. The report also includes discovered joint types alongside button presses, releases, launch requests, track playback weights, actual pose-write errors and observed local travel after a launch. Roblox log errors are collected only when they mention one of the two supplied animation IDs. Copy it after trying a charge and leap.
 
@@ -43,3 +44,5 @@ The checks run simulated client behavior and compilation. They do not establish 
 Version 1.4 switches the leap to CS_Leap and adds the full-charge long leap. The existing crouch and joint fallback stay in place. Diagnostics use the configured asset IDs and show the launch charge.
 
 The other supplied IDs are saved in `RiftHulkCharacter.AnimationIds` for future moves: Idle `180435571`, Walk `180426354`, Fall `180436148`, CS_Downslam `113926956994381`, KS_ChaseSlam `107995270438202`. This update only plays CS_Leap during the leap; it does not replace normal locomotion or add slam attacks.
+
+Version 1.5 corrects airborne arm over-rotation. Forward shoulders and bent elbows replace the airborne arm rotation in both clip and fallback modes, without changing launch strength or normal locomotion.

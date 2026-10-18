@@ -1,4 +1,4 @@
--- Rift Hub / Hulk / 1.4 | standalone hold-to-charge leap
+-- Rift Hub / Hulk / 1.5 | standalone hold-to-charge leap
 -- All controller code is embedded here; only the user logo is downloaded.
 local env = type(getgenv) == "function" and getgenv() or _G
 local existing = env.RiftHulkCharacter
@@ -149,17 +149,23 @@ return function(character)
 		M.Restore();M.AppliedCount=0
 		if not phase then return end
 		local crouching=phase=="charging"
+		local armsOnly=phase=="airborne-arms"
 		local alpha=crouching and power or 1
 		local angles=crouching and {root=-10,waist=-10,neck=12,hip=45,knee=-85,ankle=40,shoulder=35,elbow=-35}
-			or {root=-12,waist=-8,neck=15,hip=25,knee=-50,ankle=25,shoulder=145,elbow=-25}
+			or {root=-12,waist=-8,neck=15,hip=25,knee=-50,ankle=25,shoulder=105,elbow=20,wrist=0}
 		for _,entry in ipairs(joints) do
 			local ok,err=pcall(function()
 				local joint=entry.Joint
 				if not joint.Parent then return end
+				local arm=entry.Role=="shoulder" or entry.Role=="elbow" or entry.Role=="wrist"
+				if armsOnly and not arm then return end
 				local down=crouching and entry.Role=="root" and -(M.Rig=="R6" and .55 or .9)*alpha or 0
 				local rotation=entry.Rest().Rotation
 				local delta=rotation:Inverse()*CFrame.new(0,down,0)*CFrame.Angles(math.rad(angles[entry.Role] or 0)*alpha,0,0)*rotation
-				entry.Base=joint.Transform;entry.Applied=delta*entry.Base
+				entry.Base=joint.Transform
+				-- Use a rest-relative arm pose while airborne. Adding it to the clip's
+				-- shoulder/elbow motion can bend arms behind the body or fold them twice.
+				entry.Applied=(not crouching and arm) and delta or delta*entry.Base
 				joint.Transform=entry.Applied;M.AppliedCount+=1
 			end)
 			if not ok then M.LastError=entry.Joint.Name..": "..tostring(err) end
@@ -424,14 +430,15 @@ return function(Utils, Kit, PoseCtor, Brand)
 			end
 		end
 		if pose then
-			if useClip then pose.Set(nil)
+			if useClip then
+				if charging then pose.Set(nil) else pose.Set("airborne-arms") end
 			else
 				if track and track.Length > 0 then stopTrack(track) end
 				pose.Set(charging and "charging" or "airborne", M.Power)
 			end
 		end
 		M.LastPoseError = pose and pose.LastError or M.LastPoseError
-		animationNote = useClip and "Animation clip" or M.LastPoseError and "Pose error · Copy report" or pose and pose.Count > 0 and "Built-in pose" or "No compatible body joints"
+		animationNote = useClip and (charging and "Animation clip" or "Animation clip · forward arms") or M.LastPoseError and "Pose error · Copy report" or pose and pose.Count > 0 and "Built-in pose" or "No compatible body joints"
 	end
 	local function prepareAnimations()
 		local char, hum, root=body()
@@ -569,7 +576,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		end
 		Kit.create("TextLabel", { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = "HULK / LEAP · 1.4", TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = "HULK / LEAP · 1.5", TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = "×", TextSize = 20, TextColor3 = Kit.SUB }, dock)
 		leapButton = Kit.create("TextButton", { Name = "HoldLeap", Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(118, 82),
@@ -700,7 +707,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		local function safeText(get)
 			local ok,value=pcall(get);return ok and tostring(value) or "unavailable"
 		end
-		return table.concat({"Rift Hub / Hulk / 1.4", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
+		return table.concat({"Rift Hub / Hulk / 1.5", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
 			"Rig: " .. (hum and tostring(hum.RigType) or "none"),
 			"Inputs: presses=" .. M.ButtonPresses .. " | releases=" .. M.Releases .. " | launches=" .. M.Launches .. " | last=" .. M.LastInput,
 			"Character: " .. safeText(function() return char:GetFullName() end),
@@ -740,7 +747,7 @@ end)()
 local brand=BrandCtor("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/assets/rift_logo.jpg")
 local api=LeapCtor(Utils,Kit,PoseCtor,brand)
 api.Game="Hulk"
-api.Version="1.4"
+api.Version="1.5"
 local stop=api.Stop
 function api.Unload()
  stop()

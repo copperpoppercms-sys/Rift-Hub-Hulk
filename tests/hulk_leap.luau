@@ -372,6 +372,78 @@ local mixed=createPose(player.Character)
 check(mixed.Count==3 and mixed.Inventory.Bone==3,"mixed representations were posed twice")
 mixed.Destroy()
 check(run.PreAnimation:Count()==0 and run.PreSimulation:Count()==0,"new rig representations leaked callbacks")
+-- A playing leap clip keeps its body animation, but cannot fold the arms backward.
+player.Character=character();animationLength=2;targetNames={"UpperTorso","LeftUpperArm"}
+local function motorArm(name,angle)
+ local node={Name=name,Parent={},Part0={Name="UpperTorso"},Part1={},C0=CFrame.new(),Transform=CFrame.Angles(angle,0,0)}
+ function node:IsA(kind) return kind=="Motor6D" end
+ return node
+end
+local shoulder=motorArm("LeftShoulder",-1.2)
+local elbow=motorArm("LeftElbow",-.9)
+local wrist=motorArm("LeftWrist",.8)
+-- Replace the preexisting left shoulder; do not give the same limb two joints.
+for i,joint in ipairs(player.Character.joints) do
+ if joint.Name=="LeftShoulder" then player.Character.joints[i]=shoulder end
+end
+table.insert(player.Character.joints,elbow);table.insert(player.Character.joints,wrist)
+local clipArms=create(Utils,Kit,createPose);clipArms.SetEnabled(true)
+local armTouch=touch();widget("HoldLeap").InputBegan:Fire(armTouch);step(.7)
+near(shoulder.Transform.Angle,-1.2) -- crouch clip still owns the arms
+UIS.InputEnded:Fire(armTouch)
+local bodyRoot=player.Character.joints[1]
+local bodyHip=player.Character.joints[3]
+local rootAnimation=CFrame.Angles(.32,0,0);local hipAnimation=CFrame.Angles(.42,0,0)
+bodyRoot.Transform=rootAnimation;bodyHip.Transform=hipAnimation
+step(0)
+near(shoulder.Transform.Angle,math.rad(105));near(elbow.Transform.Angle,math.rad(20));near(wrist.Transform.Angle,0)
+check(bodyRoot.Transform==rootAnimation and bodyHip.Transform==hipAnimation,"airborne arm correction replaced the clip body pose")
+check(animationTracks[#animationTracks].IsPlaying,"arm correction stopped CS_Leap")
+-- Simulate fresh Animator output each frame; corrections do not add to the animated arms.
+run.PreAnimation:Fire()
+local freshShoulder=CFrame.Angles(-2.4,0,0);local freshElbow=CFrame.Angles(-1.4,0,0)
+shoulder.Transform=freshShoulder;elbow.Transform=freshElbow
+run.PreSimulation:Fire()
+near(shoulder.Transform.Angle,math.rad(105));near(elbow.Transform.Angle,math.rad(20))
+step(.1);near(shoulder.Transform.Angle,math.rad(105))
+-- If the clip ends in midair, fallback arms retain the same forward pose.
+animationTracks[#animationTracks].IsPlaying=false
+step(.1);step(0)
+near(shoulder.Transform.Angle,math.rad(105));near(elbow.Transform.Angle,math.rad(20))
+land(clipArms)
+check(shoulder.Transform==freshShoulder and elbow.Transform==freshElbow,"landing left the corrected arms stuck")
+clipArms.Stop()
+-- Every supported rig representation uses rest-relative arms and restores ownership.
+for _,kind in ipairs({"Motor6D","AnimationConstraint","Bone"}) do
+ player.Character=character(kind=="Motor6D" and Enum.HumanoidRigType.R6 or nil)
+ local parent={Name="UpperTorso"}
+ local arm,forearm,hand
+ if kind=="Motor6D" then
+  arm=motorArm("Left Shoulder",-1.3);forearm=motorArm("LeftElbow",-1);hand=motorArm("LeftWrist",.8)
+ elseif kind=="AnimationConstraint" then
+  arm=constraint("LeftShoulderRigAttachment",parent,{Name="LeftUpperArm"})
+  forearm=constraint("LeftElbowRigAttachment",{Name="LeftUpperArm"},{Name="LeftLowerArm"})
+  hand=constraint("LeftWristRigAttachment",{Name="LeftLowerArm"},{Name="LeftHand"})
+ else
+  arm=bone("LeftShoulder",parent);forearm=bone("LeftElbow",arm);hand=bone("LeftWrist",forearm)
+ end
+ arm.Transform=CFrame.Angles(-1.3,0,0);forearm.Transform=CFrame.Angles(-1,0,0);hand.Transform=CFrame.Angles(.8,0,0)
+ local originalArm,originalForearm,originalHand=arm.Transform,forearm.Transform,hand.Transform
+ player.Character.joints={arm,forearm,hand}
+ local p=createPose(player.Character)
+ p.Set("airborne-arms",1);step(0)
+ near(arm.Transform.Angle,math.rad(105));near(forearm.Transform.Angle,math.rad(20));near(hand.Transform.Angle,0)
+ step(.1);near(arm.Transform.Angle,math.rad(105))
+ p.Set("airborne",1);step(0)
+ near(arm.Transform.Angle,math.rad(105));near(forearm.Transform.Angle,math.rad(20))
+ p.Set(nil)
+ check(arm.Transform==originalArm and forearm.Transform==originalForearm and hand.Transform==originalHand,"arm pose did not restore "..kind)
+ p.Set("airborne-arms",1);step(0)
+ local externalArm=CFrame.Angles(.6,0,0);arm.Transform=externalArm
+ p.Destroy()
+ check(arm.Transform==externalArm and forearm.Transform==originalForearm,"arm cleanup overwrote another owner on "..kind)
+end
+check(run.PreAnimation:Count()==0 and run.PreSimulation:Count()==0,"airborne arm fix leaked callbacks")
 -- Execute the generated standalone, including its own minimal UI kit and logo fallback.
 local standaloneEnv={}
 local getgenv=function() return standaloneEnv end
