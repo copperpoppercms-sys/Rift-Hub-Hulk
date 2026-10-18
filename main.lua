@@ -1,4 +1,4 @@
--- Rift Hub / Hulk / 1.2 | standalone hold-to-charge leap
+-- Rift Hub / Hulk / 1.3 | standalone hold-to-charge leap
 -- All controller code is embedded here; only the user logo is downloaded.
 local env = type(getgenv) == "function" and getgenv() or _G
 local existing = env.RiftHulkCharacter
@@ -18,104 +18,160 @@ function Kit.create(class,props,parent)
  return obj
 end
 local PoseCtor=(function()
--- Local joint poses for standard R6/R15 rigs. C0, movement controls and Animate stay unchanged.
+-- Local poses for Motor6D, AnimationConstraint and skinned Bone rigs.
+-- Only Transform is written; bind frames, attachments and movement controls are unchanged.
 local RunService = game:GetService("RunService")
 return function(character)
 	local joints, connections = {}, {}
 	local phase, power, destroyed = nil, 0, false
-	local M = { Count = 0, Rig = "Custom", AppliedCount=0, LastError=nil }
+	local M = { Count=0, Rig="Custom", AppliedCount=0, LastError=nil,
+		Inventory={Motor6D=0,AnimationConstraint=0,Bone=0}, ScanNotes={}, PendingBindings=0 }
+	local function read(object, key)
+		if not object then return nil end
+		local ok, value=pcall(function() return object[key] end)
+		return ok and value or nil
+	end
+	local function isa(object, kind)
+		return object and object:IsA(kind)
+	end
 	local hum = character:FindFirstChildOfClass("Humanoid")
-	if hum then M.Rig = tostring(hum.RigType):match("R%d+") or "Custom" end
-	local exactRoles = { rootjoint="root", root="root", waist="waist", neck="neck",
-		lefthip="hip", righthip="hip", leftknee="knee", rightknee="knee",
-		leftankle="ankle", rightankle="ankle", leftshoulder="shoulder", rightshoulder="shoulder",
-		leftelbow="elbow", rightelbow="elbow", leftwrist="wrist", rightwrist="wrist" }
-	-- checked in order, first match wins -- covers a custom-named rig (a reskinned
-	-- hero model, not your default avatar) whose joints don't use stock R6/R15 names
-	local substringRoles = {
-		{ "shoulder", "shoulder" }, { "elbow", "elbow" }, { "wrist", "wrist" },
-		{ "hip", "hip" }, { "knee", "knee" }, { "ankle", "ankle" },
-		{ "waist", "waist" }, { "spine", "waist" }, { "neck", "neck" }, { "root", "root" },
-	}
-	local function classify(joint)
-		local key = joint.Name:lower():gsub("[%s_%-]", "")
+	if hum then M.Rig=tostring(hum.RigType):match("R%d+") or "Custom" end
+	local exactRoles = { rootjoint="root", root="root", pelvis="root", hips="root", waist="waist", neck="neck",
+		lefthip="hip", righthip="hip", leftknee="knee", rightknee="knee", leftankle="ankle", rightankle="ankle",
+		leftshoulder="shoulder", rightshoulder="shoulder", leftelbow="elbow", rightelbow="elbow",
+		leftwrist="wrist", rightwrist="wrist" }
+	local function roleFromName(name)
+		local key=tostring(name or ""):lower():gsub("[%s_%-]", ""):gsub("rigattachment$", ""):gsub("attachment$", "")
 		if exactRoles[key] then return exactRoles[key] end
-		for _, pair in ipairs(substringRoles) do
-			if key:find(pair[1], 1, true) then return pair[2] end
+		for _,role in ipairs({"shoulder","elbow","wrist","hip","knee","ankle","waist","neck","root"}) do
+			if key:find(role,1,true) then return role end
 		end
-		if joint.Part0 and joint.Part0.Name == "HumanoidRootPart" then return "root" end
-		-- last resort: the joint's own name told us nothing, so guess from the limb
-		-- it bends -- a custom rig's parts are still usually named sensibly even
-		-- when its joints aren't
-		local part1 = joint.Part1 and tostring(joint.Part1.Name or ""):lower() or ""
-		if part1:find("arm", 1, true) then return "shoulder" end
-		if part1:find("leg", 1, true) or part1:find("thigh", 1, true) or part1:find("shin", 1, true) then return "hip" end
-		if part1:find("torso", 1, true) or part1:find("spine", 1, true) then return "waist" end
-		if part1:find("head", 1, true) then return "neck" end
+		if key:find("spine",1,true) then return "waist" end
 		return nil
 	end
-	for _, joint in ipairs(character:GetDescendants()) do
-		if joint:IsA("Motor6D") and joint.Part0 and joint.Part1 then
-			local role = classify(joint)
-			if role then table.insert(joints, { Joint=joint, Role=role }); M.Count += 1 end
+	local function fromLimb(part)
+		local key=tostring(read(part,"Name") or ""):lower():gsub("[%s_%-]", "")
+		if key:find("hand",1,true) then return "wrist" end
+		if key:find("lowerarm",1,true) or key:find("forearm",1,true) then return "elbow" end
+		if key:find("arm",1,true) then return "shoulder" end
+		if key:find("foot",1,true) then return "ankle" end
+		if key:find("lowerleg",1,true) or key:find("shin",1,true) or key:find("calf",1,true) then return "knee" end
+		if key:find("leg",1,true) or key:find("thigh",1,true) then return "hip" end
+		if key:find("head",1,true) then return "neck" end
+		if key:find("torso",1,true) or key:find("spine",1,true) then return "waist" end
+		return nil
+	end
+	local function inAccessory(node)
+		local ok, ancestor=pcall(function() return node:FindFirstAncestorOfClass("Accessory") or node:FindFirstAncestorOfClass("Tool") end)
+		return ok and ancestor~=nil
+	end
+	local rigid, bones = {}, {}
+	local function add(joint, kind)
+		M.Inventory[kind] += 1
+		if inAccessory(joint) then return end
+		local part0, part1, a0, a1, rest
+		if kind=="AnimationConstraint" then
+			a0,a1=read(joint,"Attachment0"),read(joint,"Attachment1")
+			part0,part1=read(a0,"Parent") or read(joint,"Part0"),read(a1,"Parent") or read(joint,"Part1")
+			rest=function() return a0 and a0.CFrame or joint.C0 end
+		elseif kind=="Bone" then
+			part0,part1=read(joint,"Parent"),joint
+			rest=function() return joint.CFrame end
+		else
+			part0,part1=read(joint,"Part0"),read(joint,"Part1")
+			rest=function() return joint.C0 end
 		end
+		local role=roleFromName(joint.Name) or roleFromName(read(a0,"Name")) or roleFromName(read(a1,"Name"))
+		if not role and read(part0,"Name")=="HumanoidRootPart" then role="root" end
+		if not role then role=fromLimb(part1) end
+		if not part0 or not part1 or not role then
+			if not part0 or not part1 then M.PendingBindings += 1 end
+			if #M.ScanNotes<12 then table.insert(M.ScanNotes,joint.Name.."["..kind.."] "..(not role and "role unknown" or "binding incomplete")) end
+			return
+		end
+		local entry={Joint=joint,Role=role,Kind=kind,Rest=rest}
+		table.insert(kind=="Bone" and bones or rigid,entry)
+	end
+	for _, joint in ipairs(character:GetDescendants()) do
+		if isa(joint,"Motor6D") then add(joint,"Motor6D")
+		elseif isa(joint,"AnimationConstraint") then add(joint,"AnimationConstraint")
+		elseif isa(joint,"Bone") then add(joint,"Bone") end
+	end
+	local rigidLimbs, rootFound=0,false
+	for _,entry in ipairs(rigid) do
+		if entry.Role=="root" then rootFound=true else rigidLimbs+=1 end
+	end
+	-- A skinned body can have a rigid root plus bones. Do not pose both skin bones
+	-- and physical limb joints when they represent the same limbs.
+	if rigidLimbs>0 or #bones==0 then joints=rigid
+	else
+		for _,entry in ipairs(rigid) do if entry.Role=="root" then table.insert(joints,entry) end end
+		for _,entry in ipairs(bones) do if not (rootFound and entry.Role=="root") then table.insert(joints,entry) end end
+	end
+	M.Count=#joints
+	function M.NeedsRefresh()
+		if M.PendingBindings>0 then return true end
+		local counts={Motor6D=0,AnimationConstraint=0,Bone=0}
+		for _,node in ipairs(character:GetDescendants()) do
+			if isa(node,"Motor6D") then counts.Motor6D+=1
+			elseif isa(node,"AnimationConstraint") then counts.AnimationConstraint+=1
+			elseif isa(node,"Bone") then counts.Bone+=1 end
+		end
+		return counts.Motor6D~=M.Inventory.Motor6D or counts.AnimationConstraint~=M.Inventory.AnimationConstraint or counts.Bone~=M.Inventory.Bone
 	end
 	function M.Describe()
-		if #joints == 0 then return "no Motor6D joints matched" end
-		local parts = {}
-		for _, entry in ipairs(joints) do
-			table.insert(parts, entry.Joint.Name .. ":" .. entry.Role)
+		local inventory=string.format("found Motor6D=%d, AnimationConstraint=%d, Bone=%d",M.Inventory.Motor6D,M.Inventory.AnimationConstraint,M.Inventory.Bone)
+		local details={}
+		for i,entry in ipairs(joints) do
+			if i>20 then table.insert(details,"more joints omitted");break end
+			table.insert(details,entry.Joint.Name.."["..entry.Kind.."]:"..entry.Role)
 		end
-		return table.concat(parts, ", ")
+		if #details==0 then table.insert(details,"no usable joints; "..table.concat(M.ScanNotes,", ")) end
+		return inventory.." | "..table.concat(details,", ")
 	end
 	function M.Restore()
-		for _, entry in ipairs(joints) do
+		for _,entry in ipairs(joints) do
 			if entry.Base then
-				pcall(function()
-					-- Preserve a different transform written by the game since our last pose.
-					if entry.Joint.Parent and entry.Joint.Transform == entry.Applied then entry.Joint.Transform = entry.Base end
+				local ok,err=pcall(function()
+					if entry.Joint.Parent and entry.Joint.Transform==entry.Applied then entry.Joint.Transform=entry.Base end
 				end)
-				entry.Base, entry.Applied = nil, nil
+				if not ok then M.LastError=entry.Joint.Name.." restore: "..tostring(err) end
+				entry.Base,entry.Applied=nil,nil
 			end
 		end
 	end
 	function M.Set(nextPhase, amount)
-		phase, power = nextPhase, math.clamp(amount or 0, 0, 1)
-		if not phase then M.Restore(); M.AppliedCount=0 end
+		phase,power=nextPhase,math.clamp(amount or 0,0,1)
+		if not phase then M.Restore();M.AppliedCount=0 end
 	end
 	local function apply()
 		if destroyed then return end
-		M.Restore()
-		M.AppliedCount=0
+		M.Restore();M.AppliedCount=0
 		if not phase then return end
-		local crouching = phase == "charging"
-		local alpha = crouching and power or 1
-		local angles = crouching and { root=-10, waist=-10, neck=12, hip=45, knee=-85, ankle=40, shoulder=35, elbow=-35 }
-			or { root=-12, waist=-8, neck=15, hip=25, knee=-50, ankle=25, shoulder=145, elbow=-25 }
-		for _, entry in ipairs(joints) do
+		local crouching=phase=="charging"
+		local alpha=crouching and power or 1
+		local angles=crouching and {root=-10,waist=-10,neck=12,hip=45,knee=-85,ankle=40,shoulder=35,elbow=-35}
+			or {root=-12,waist=-8,neck=15,hip=25,knee=-50,ankle=25,shoulder=145,elbow=-25}
+		for _,entry in ipairs(joints) do
 			local ok,err=pcall(function()
-				local joint = entry.Joint
+				local joint=entry.Joint
 				if not joint.Parent then return end
-				local down = crouching and entry.Role == "root" and -(M.Rig == "R6" and 0.55 or 0.9) * alpha or 0
-				local rotation = joint.C0.Rotation
-				local delta = rotation:Inverse() * CFrame.new(0, down, 0)
-					* CFrame.Angles(math.rad(angles[entry.Role] or 0) * alpha, 0, 0) * rotation
-				entry.Base = joint.Transform
-				entry.Applied = delta * entry.Base
-				joint.Transform = entry.Applied
-				M.AppliedCount += 1
+				local down=crouching and entry.Role=="root" and -(M.Rig=="R6" and .55 or .9)*alpha or 0
+				local rotation=entry.Rest().Rotation
+				local delta=rotation:Inverse()*CFrame.new(0,down,0)*CFrame.Angles(math.rad(angles[entry.Role] or 0)*alpha,0,0)*rotation
+				entry.Base=joint.Transform;entry.Applied=delta*entry.Base
+				joint.Transform=entry.Applied;M.AppliedCount+=1
 			end)
-			if not ok then M.LastError=tostring(entry.Joint.Name) .. ": " .. tostring(err) end
+			if not ok then M.LastError=entry.Joint.Name..": "..tostring(err) end
 		end
 	end
-	-- Restore before Animator evaluates, and apply after its joint writes.
-	if RunService.PreAnimation then table.insert(connections, RunService.PreAnimation:Connect(M.Restore)) end
-	table.insert(connections, (RunService.PreSimulation or RunService.Stepped):Connect(apply))
+	if RunService.PreAnimation then table.insert(connections,RunService.PreAnimation:Connect(M.Restore)) end
+	table.insert(connections,(RunService.PreSimulation or RunService.Stepped):Connect(apply))
 	function M.Destroy()
 		if destroyed then return end
-		destroyed = true; phase = nil; M.Restore()
-		for _, connection in ipairs(connections) do connection:Disconnect() end
-		table.clear(connections); table.clear(joints)
+		destroyed=true;phase=nil;M.Restore()
+		for _,connection in ipairs(connections) do connection:Disconnect() end
+		table.clear(connections);table.clear(joints)
 	end
 	return M
 end
@@ -327,7 +383,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 	end
 	local function ensurePose(char)
 		if not PoseCtor then return end
-		if poseChar ~= char or (pose and pose.Count == 0 and os.clock()-lastPoseAttempt > 1) then
+		if poseChar ~= char or (pose and os.clock()-lastPoseAttempt > 1 and (pose.Count == 0 or (pose.NeedsRefresh and pose.NeedsRefresh()))) then
 			clearPose()
 			lastPoseAttempt=os.clock()
 			local ok, result = pcall(PoseCtor, char)
@@ -500,7 +556,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		end
 		Kit.create("TextLabel", { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = "HULK / LEAP · 1.2", TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = "HULK / LEAP · 1.3", TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = "×", TextSize = 20, TextColor3 = Kit.SUB }, dock)
 		leapButton = Kit.create("TextButton", { Name = "HoldLeap", Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(118, 82),
@@ -630,7 +686,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		local function safeText(get)
 			local ok,value=pcall(get);return ok and tostring(value) or "unavailable"
 		end
-		return table.concat({"Rift Hub / Hulk / 1.2", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
+		return table.concat({"Rift Hub / Hulk / 1.3", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
 			"Rig: " .. (hum and tostring(hum.RigType) or "none"),
 			"Inputs: presses=" .. M.ButtonPresses .. " | releases=" .. M.Releases .. " | launches=" .. M.Launches .. " | last=" .. M.LastInput,
 			"Character: " .. safeText(function() return char:GetFullName() end),
@@ -669,7 +725,7 @@ end)()
 local brand=BrandCtor("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/assets/rift_logo.jpg")
 local api=LeapCtor(Utils,Kit,PoseCtor,brand)
 api.Game="Hulk"
-api.Version="1.2"
+api.Version="1.3"
 local stop=api.Stop
 function api.Unload()
  stop()

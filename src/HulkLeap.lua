@@ -154,7 +154,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 	end
 	local function ensurePose(char)
 		if not PoseCtor then return end
-		if poseChar ~= char or (pose and pose.Count == 0 and os.clock()-lastPoseAttempt > 1) then
+		if poseChar ~= char or (pose and os.clock()-lastPoseAttempt > 1 and (pose.Count == 0 or (pose.NeedsRefresh and pose.NeedsRefresh()))) then
 			clearPose()
 			lastPoseAttempt=os.clock()
 			local ok, result = pcall(PoseCtor, char)
@@ -327,7 +327,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		end
 		Kit.create("TextLabel", { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = "HULK / LEAP · 1.2", TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = "HULK / LEAP · 1.3", TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = "×", TextSize = 20, TextColor3 = Kit.SUB }, dock)
 		leapButton = Kit.create("TextButton", { Name = "HoldLeap", Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(118, 82),
@@ -457,7 +457,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		local function safeText(get)
 			local ok,value=pcall(get);return ok and tostring(value) or "unavailable"
 		end
-		return table.concat({"Rift Hub / Hulk / 1.2", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
+		return table.concat({"Rift Hub / Hulk / 1.3", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
 			"Rig: " .. (hum and tostring(hum.RigType) or "none"),
 			"Inputs: presses=" .. M.ButtonPresses .. " | releases=" .. M.Releases .. " | launches=" .. M.Launches .. " | last=" .. M.LastInput,
 			"Character: " .. safeText(function() return char:GetFullName() end),

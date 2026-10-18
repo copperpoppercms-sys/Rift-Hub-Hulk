@@ -274,6 +274,79 @@ step(.1);step(.1)
 check(poseFailure.Diagnostics():find("last pose error=Root:",1,true),"pose write failure was swallowed")
 poseFailure.Stop()
 check(logs.MessageOut:Count()==0,"animation log listener leaked")
+-- R15 AnimationConstraint rigs have no Motor6D joints; use attachment bindings and Transform.
+player.Character=character();player.Character.joints={};animationLength=0
+local lowerTorso={Name="LowerTorso"};local hrp={Name="HumanoidRootPart"}
+local function constraint(attachmentName,part0,part1)
+ local rest=CFrame.new()
+ local node={Name="AnimationConstraint",ClassName="AnimationConstraint",Parent={},Transform=CFrame.new(),C0=false,
+  Attachment0={Name=attachmentName,Parent=part0,CFrame=rest},Attachment1={Name=attachmentName,Parent=part1,CFrame=CFrame.new()}}
+ function node:IsA(name) return name=="AnimationConstraint" end
+ return node
+end
+local acRoot=constraint("RootRigAttachment",hrp,lowerTorso)
+local acHip=constraint("LeftHipRigAttachment",lowerTorso,{Name="LeftUpperLeg"})
+local acKnee=constraint("LeftKneeRigAttachment",{Name="LeftUpperLeg"},{Name="LeftLowerLeg"})
+player.Character.joints={acRoot,acHip,acKnee}
+local constraintBase=acRoot.Transform
+local constraintPose=createPose(player.Character)
+check(constraintPose.Count==3 and constraintPose.Inventory.Motor6D==0 and constraintPose.Inventory.AnimationConstraint==3,"animation constraints were not discovered")
+constraintPose.Set("charging",.5);step(0)
+near(acRoot.Transform.Y,-.45)
+check(constraintPose.AppliedCount==3 and constraintPose.LastError==nil,"constraint pose failed to apply")
+constraintPose.Set("charging",1);step(0)
+near(acRoot.Transform.Y,-.9)
+check(acRoot.C0==false and acRoot.Attachment0.CFrame.Y==0,"constraint posing changed rest attachments")
+constraintPose.Set(nil)
+check(acRoot.Transform==constraintBase,"constraint transform did not restore")
+constraintPose.Destroy()
+-- Exercise the complete controller with this Motor6D-free rig and denied animation data.
+local constraintControl=create(Utils,Kit,createPose);constraintControl.SetEnabled(true)
+local acTouch=touch();widget("HoldLeap").InputBegan:Fire(acTouch);step(1.1);step(0)
+check(acRoot.Transform.Y<0 and constraintControl.Diagnostics():find("AnimationConstraint=3",1,true),"full controller did not use constraint fallback")
+UIS.InputEnded:Fire(acTouch)
+check(constraintControl.Phase=="airborne" and player.Character.root.impulses==1,"constraint rig did not leap")
+constraintControl.Stop()
+check(acRoot.Transform==constraintBase,"controller stop did not restore constraints")
+-- Binding completion or new rig joints trigger a rescan after warmup.
+player.Character.joints={acRoot}
+local loadedPartial=create(Utils,Kit,createPose);loadedPartial.SetEnabled(true)
+check(loadedPartial.Diagnostics():find("Built-in joints: 1",1,true),"initial partial rig was not observed")
+player.Character.joints={acRoot,acHip,acKnee};step(1.1)
+check(loadedPartial.Diagnostics():find("Built-in joints: 3",1,true),"newly loaded joints were not rescanned")
+loadedPartial.Stop()
+local incomplete=constraint("RightHipRigAttachment",lowerTorso,{Name="RightUpperLeg"})
+incomplete.Attachment1=nil
+player.Character.joints={acRoot,incomplete}
+local pending=createPose(player.Character)
+check(pending.Count==1 and pending.NeedsRefresh(),"incomplete attachment binding was treated as final")
+pending.Destroy()
+-- Skinned bodies use Bone.Transform and Bone.CFrame rather than Part0/Part1/C0.
+player.Character=character();player.Character.joints={}
+local mesh={Name="BodyMesh"}
+local function bone(name,parent)
+ local node={Name=name,ClassName="Bone",Parent=parent,Transform=CFrame.new(),CFrame=CFrame.new()}
+ function node:IsA(kind) return kind=="Bone" or kind=="Attachment" end
+ return node
+end
+local boneRoot=bone("Root",mesh)
+local boneHip=bone("LeftHip",boneRoot)
+local boneKnee=bone("LeftKnee",boneHip)
+player.Character.joints={boneRoot,boneHip,boneKnee}
+local boneBase=boneRoot.Transform
+local bonePose=createPose(player.Character)
+check(bonePose.Count==3 and bonePose.Inventory.Bone==3,"bones not discovered")
+bonePose.Set("charging",1);step(0)
+near(boneRoot.Transform.Y,-.9)
+check(bonePose.AppliedCount==3 and bonePose.LastError==nil,"bone transforms did not apply")
+bonePose.Destroy()
+check(boneRoot.Transform==boneBase,"bone transforms not restored")
+-- Do not apply a second copy of a pose to skin bones when physical limb joints exist.
+player.Character.joints={acRoot,acHip,acKnee,boneRoot,boneHip,boneKnee}
+local mixed=createPose(player.Character)
+check(mixed.Count==3 and mixed.Inventory.Bone==3,"mixed representations were posed twice")
+mixed.Destroy()
+check(run.PreAnimation:Count()==0 and run.PreSimulation:Count()==0,"new rig representations leaked callbacks")
 -- Execute the generated standalone, including its own minimal UI kit and logo fallback.
 local standaloneEnv={}
 local getgenv=function() return standaloneEnv end
