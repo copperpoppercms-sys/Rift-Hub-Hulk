@@ -3,7 +3,7 @@ local RunService = game:GetService("RunService")
 return function(character)
 	local joints, connections = {}, {}
 	local phase, power, destroyed = nil, 0, false
-	local M = { Count = 0, Rig = "Custom" }
+	local M = { Count = 0, Rig = "Custom", AppliedCount=0, LastError=nil }
 	local hum = character:FindFirstChildOfClass("Humanoid")
 	if hum then M.Rig = tostring(hum.RigType):match("R%d+") or "Custom" end
 	local exactRoles = { rootjoint="root", root="root", waist="waist", neck="neck",
@@ -27,7 +27,7 @@ return function(character)
 		-- last resort: the joint's own name told us nothing, so guess from the limb
 		-- it bends -- a custom rig's parts are still usually named sensibly even
 		-- when its joints aren't
-		local part1 = joint.Part1 and joint.Part1.Name:lower() or ""
+		local part1 = joint.Part1 and tostring(joint.Part1.Name or ""):lower() or ""
 		if part1:find("arm", 1, true) then return "shoulder" end
 		if part1:find("leg", 1, true) or part1:find("thigh", 1, true) or part1:find("shin", 1, true) then return "hip" end
 		if part1:find("torso", 1, true) or part1:find("spine", 1, true) then return "waist" end
@@ -61,18 +61,19 @@ return function(character)
 	end
 	function M.Set(nextPhase, amount)
 		phase, power = nextPhase, math.clamp(amount or 0, 0, 1)
-		if not phase then M.Restore() end
+		if not phase then M.Restore(); M.AppliedCount=0 end
 	end
 	local function apply()
 		if destroyed then return end
 		M.Restore()
+		M.AppliedCount=0
 		if not phase then return end
 		local crouching = phase == "charging"
 		local alpha = crouching and power or 1
 		local angles = crouching and { root=-10, waist=-10, neck=12, hip=45, knee=-85, ankle=40, shoulder=35, elbow=-35 }
 			or { root=-12, waist=-8, neck=15, hip=25, knee=-50, ankle=25, shoulder=145, elbow=-25 }
 		for _, entry in ipairs(joints) do
-			pcall(function()
+			local ok,err=pcall(function()
 				local joint = entry.Joint
 				if not joint.Parent then return end
 				local down = crouching and entry.Role == "root" and -(M.Rig == "R6" and 0.55 or 0.9) * alpha or 0
@@ -82,7 +83,9 @@ return function(character)
 				entry.Base = joint.Transform
 				entry.Applied = delta * entry.Base
 				joint.Transform = entry.Applied
+				M.AppliedCount += 1
 			end)
+			if not ok then M.LastError=tostring(entry.Joint.Name) .. ": " .. tostring(err) end
 		end
 	end
 	-- Restore before Animator evaluates, and apply after its joint writes.

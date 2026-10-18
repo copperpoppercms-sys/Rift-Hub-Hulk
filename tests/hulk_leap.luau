@@ -59,14 +59,19 @@ local function character(rig)
 	function animator:LoadAnimation(animation)
 		if animationFailure then error("animation access denied") end
 		local t={Id=animation.AnimationId,Length=animationLength,IsPlaying=false,TimePosition=0,Destroyed=false}
-		function t:Play(_,_,speed) self.IsPlaying=true;self.Speed=speed end
+		function t:Play(_,weight,speed)
+			-- Simulate a warm track whose existing weight is retained when Play is called again.
+			if not self.IsPlaying then self.WeightCurrent=weight end
+			self.IsPlaying=true;self.Speed=speed
+		end
+		function t:AdjustWeight(weight) self.WeightCurrent=weight end
 		function t:GetTargetNames() return targetNames end
 		function t:AdjustSpeed(speed) self.Speed=speed end
-		function t:Stop() self.IsPlaying=false end
+		function t:Stop() self.IsPlaying=false;self.StopCalls=(self.StopCalls or 0)+1 end
 		function t:Destroy() self.Destroyed=true end
 		table.insert(animationTracks,t);return t
 	end
-	local root={Parent={},Anchored=false,AssemblyMass=10,AssemblyLinearVelocity=Vector3.zero,CFrame={LookVector=Vector3.new(0,0,-1)},impulses=0}
+	local root={Parent={},Anchored=false,AssemblyMass=10,AssemblyLinearVelocity=Vector3.zero,Position=Vector3.zero,CFrame={LookVector=Vector3.new(0,0,-1)},impulses=0}
 	function root:ApplyImpulse(impulse) self.impulses+=1;self.AssemblyLinearVelocity=self.AssemblyLinearVelocity+impulse*(1/self.AssemblyMass) end
 	local hum={RigType=rig or Enum.HumanoidRigType.R15,Health=100,FloorMaterial=Enum.Material.Concrete,PlatformStand=false,Sit=false,WalkSpeed=24,MoveDirection=Vector3.zero}
 	function hum:FindFirstChildOfClass(class) if class=="Animator" then return animator end end
@@ -88,9 +93,10 @@ local player={Character=character(),CharacterRemoving=signal()}
 function player:WaitForChild() return {} end
 local UIS={InputEnded=signal(),InputChanged=signal(),WindowFocusReleased=signal()}
 local run={Heartbeat=signal(),PreAnimation=signal(),PreSimulation=signal()}
+local logs={MessageOut=signal()}
 local workspace={CurrentCamera={ViewportSize=Vector3.new(390,844,0)}}
 local game={GetService=function(_,name)
-	if name=="Players" then return {LocalPlayer=player} elseif name=="RunService" then return run elseif name=="UserInputService" then return UIS else return {} end
+	if name=="Players" then return {LocalPlayer=player} elseif name=="RunService" then return run elseif name=="UserInputService" then return UIS elseif name=="LogService" then return logs else return {} end
 end}
 local Kit={create=object,face=function() return "font" end,SUB="sub",INK="ink"}
 local Utils={GetCharacter=function() return player.Character end}
@@ -123,7 +129,7 @@ button.InputBegan:Fire(a);step(1.1)
 near(m.Power,.5);check(m.Phase=="charging","hold did not charge")
 local squat=animationTracks[1]
 check(squat.Id=="rbxassetid://99086193071059" and squat.IsPlaying,"wrong squat animation")
-near(squat.TimePosition,.5);near(squat.Speed,0)
+near(squat.TimePosition,.5);near(squat.Speed,0);near(squat.WeightCurrent,1)
 UIS.InputEnded:Fire(b)
 check(m.Phase=="charging" and player.Character.root.impulses==0,"other finger released the charge")
 button.InputBegan:Fire(b);step(5)
@@ -234,6 +240,40 @@ r6.SetEnabled(false)
 check(player.Character.joints[1].Transform==external,"cleanup overwrote another animation")
 r6.Stop()
 check(run.PreAnimation:Count()==0 and run.PreSimulation:Count()==0,"pose frame callbacks leaked")
+-- Keep zero-length primed tracks alive during their loading window.
+player.Character=character();animationLength=0;targetNames={"UpperTorso"}
+local warming=create(Utils,Kit,createPose);warming.SetEnabled(true)
+local warmCrouch=animationTracks[#animationTracks-1]
+step(.1)
+check(warmCrouch.IsPlaying and (warmCrouch.StopCalls or 0)==0,"warmup stopped before clip data could load")
+logs.MessageOut:Fire("Failed to load animation rbxassetid://99086193071059: asset permission denied")
+check(warming.AssetErrors.Crouch and warming.AssetErrors.Crouch:find("permission denied",1,true),"Roblox asset error not captured")
+logs.MessageOut:Fire("Rift Hub / Hulk / 1.2\nRoblox crouch error: 99086193071059")
+check(warming.AssetErrors.Crouch:find("permission denied",1,true),"copying the report overwrote asset evidence")
+widget("HoldLeap").InputBegan:Fire(touch());step(.5)
+check(warming.AnimationStatus.Crouch:find("permission denied",1,true),"reported asset failure was hidden")
+warming.Stop()
+-- Unknown custom targets must remain eligible for real clip playback (preserve upstream fix).
+player.Character=character();animationLength=2;targetNames={"CustomHeroChest"}
+local custom=create(Utils,Kit,createPose);custom.SetEnabled(true)
+local customTouch=touch();widget("HoldLeap").InputBegan:Fire(customTouch);step(.4)
+check(custom.AnimationStatus.Crouch:find("Unverified target list",1,true),"custom-rig clip rejected")
+check(animationTracks[#animationTracks-1].WeightCurrent==1,"warm clip remained invisible at zero weight")
+-- Event errors must remain visible in diagnostics rather than silently leaving a stuck charge.
+player.Character.hum.MoveDirection=nil
+local releaseOk=pcall(function() UIS.InputEnded:Fire(customTouch) end)
+check(releaseOk and custom.LastRuntimeError and custom.Phase=="ready","input error escaped without recovery")
+check(custom.Diagnostics():find("Inputs: presses=1",1,true),"diagnostics lost input stage")
+custom.Stop()
+-- Failed joint writes are observable, not falsely reported as successful poses.
+player.Character=character();animationLength=0
+local poseFailure=create(Utils,Kit,createPose);poseFailure.SetEnabled(true)
+widget("HoldLeap").InputBegan:Fire(touch());step(.5)
+player.Character.joints[1].C0=false
+step(.1);step(.1)
+check(poseFailure.Diagnostics():find("last pose error=Root:",1,true),"pose write failure was swallowed")
+poseFailure.Stop()
+check(logs.MessageOut:Count()==0,"animation log listener leaked")
 -- Execute the generated standalone, including its own minimal UI kit and logo fallback.
 local standaloneEnv={}
 local getgenv=function() return standaloneEnv end

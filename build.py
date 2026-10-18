@@ -5,7 +5,7 @@ root=Path(__file__).parent
 pose=(root/'src/Pose.lua').read_text()
 leap=(root/'src/HulkLeap.lua').read_text()
 brand=(root/'src/Brand.lua').read_text()
-source='''-- Rift Hub / Hulk / 1.1 | standalone hold-to-charge leap
+source='''-- Rift Hub / Hulk / 1.2 | standalone hold-to-charge leap
 -- All controller code is embedded here; only the user logo is downloaded.
 local env = type(getgenv) == "function" and getgenv() or _G
 local existing = env.RiftHulkCharacter
@@ -33,7 +33,7 @@ local LeapCtor=(function()
 local brand=BrandCtor("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/assets/rift_logo.jpg")
 local api=LeapCtor(Utils,Kit,PoseCtor,brand)
 api.Game="Hulk"
-api.Version="1.1"
+api.Version="1.2"
 local stop=api.Stop
 function api.Unload()
  stop()
@@ -46,7 +46,7 @@ env.RiftHulkCharacter=api
 return api
 '''
 (root/'main.lua').write_text(source)
-(root/'execute.lua').write_text('loadstring(game:HttpGet("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/main.lua"))()\n')
+(root/'execute.lua').write_text('loadstring(game:HttpGet("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/main.lua?cb=" .. tostring(os.time())))()\n')
 page='''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rift Hulk — editable full script</title><style>
 :root{color-scheme:dark;font-family:system-ui;background:#0e1711;color:#e5efe7}body{max-width:1000px;margin:auto;padding:20px}h1{font-size:24px}p{color:#afc7b5;line-height:1.5}.tools{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}button{background:#28643b;color:white;border:1px solid #428a54;border-radius:8px;padding:12px 18px;font:600 14px system-ui}textarea{box-sizing:border-box;width:100%;height:65vh;min-height:320px;padding:14px;background:#111e16;color:#e3efe6;border:1px solid #355540;border-radius:10px;font:13px/1.6 ui-monospace,monospace;tab-size:4;white-space:pre}#status{min-height:28px;color:#a8eaba}</style></head><body>
 <h1>Rift Hub / Hulk</h1><p>Complete standalone script. Hold LEAP to charge, then release to launch. Pose: Auto tries your animation IDs and uses built-in poses when clips cannot load or match the rig. Pose: Built-in forces the local joint poses. Use Copy animation report if something looks wrong.</p>

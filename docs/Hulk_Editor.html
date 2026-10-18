@@ -1,7 +1,7 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rift Hulk — editable full script</title><style>
 :root{color-scheme:dark;font-family:system-ui;background:#0e1711;color:#e5efe7}body{max-width:1000px;margin:auto;padding:20px}h1{font-size:24px}p{color:#afc7b5;line-height:1.5}.tools{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}button{background:#28643b;color:white;border:1px solid #428a54;border-radius:8px;padding:12px 18px;font:600 14px system-ui}textarea{box-sizing:border-box;width:100%;height:65vh;min-height:320px;padding:14px;background:#111e16;color:#e3efe6;border:1px solid #355540;border-radius:10px;font:13px/1.6 ui-monospace,monospace;tab-size:4;white-space:pre}#status{min-height:28px;color:#a8eaba}</style></head><body>
 <h1>Rift Hub / Hulk</h1><p>Complete standalone script. Hold LEAP to charge, then release to launch. Pose: Auto tries your animation IDs and uses built-in poses when clips cannot load or match the rig. Pose: Built-in forces the local joint poses. Use Copy animation report if something looks wrong.</p>
-<div class="tools"><button id="copy">Copy all code</button><button id="select">Select all</button><button id="download">Download .lua</button></div><div id="status" role="status" aria-live="polite">The full script below is editable.</div><textarea id="source" aria-label="Full editable Luau script" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off">-- Rift Hub / Hulk / 1.1 | standalone hold-to-charge leap
+<div class="tools"><button id="copy">Copy all code</button><button id="select">Select all</button><button id="download">Download .lua</button></div><div id="status" role="status" aria-live="polite">The full script below is editable.</div><textarea id="source" aria-label="Full editable Luau script" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off">-- Rift Hub / Hulk / 1.2 | standalone hold-to-charge leap
 -- All controller code is embedded here; only the user logo is downloaded.
 local env = type(getgenv) == &quot;function&quot; and getgenv() or _G
 local existing = env.RiftHulkCharacter
@@ -26,7 +26,7 @@ local RunService = game:GetService(&quot;RunService&quot;)
 return function(character)
 	local joints, connections = {}, {}
 	local phase, power, destroyed = nil, 0, false
-	local M = { Count = 0, Rig = &quot;Custom&quot; }
+	local M = { Count = 0, Rig = &quot;Custom&quot;, AppliedCount=0, LastError=nil }
 	local hum = character:FindFirstChildOfClass(&quot;Humanoid&quot;)
 	if hum then M.Rig = tostring(hum.RigType):match(&quot;R%d+&quot;) or &quot;Custom&quot; end
 	local exactRoles = { rootjoint=&quot;root&quot;, root=&quot;root&quot;, waist=&quot;waist&quot;, neck=&quot;neck&quot;,
@@ -50,7 +50,7 @@ return function(character)
 		-- last resort: the joint&#x27;s own name told us nothing, so guess from the limb
 		-- it bends -- a custom rig&#x27;s parts are still usually named sensibly even
 		-- when its joints aren&#x27;t
-		local part1 = joint.Part1 and joint.Part1.Name:lower() or &quot;&quot;
+		local part1 = joint.Part1 and tostring(joint.Part1.Name or &quot;&quot;):lower() or &quot;&quot;
 		if part1:find(&quot;arm&quot;, 1, true) then return &quot;shoulder&quot; end
 		if part1:find(&quot;leg&quot;, 1, true) or part1:find(&quot;thigh&quot;, 1, true) or part1:find(&quot;shin&quot;, 1, true) then return &quot;hip&quot; end
 		if part1:find(&quot;torso&quot;, 1, true) or part1:find(&quot;spine&quot;, 1, true) then return &quot;waist&quot; end
@@ -84,18 +84,19 @@ return function(character)
 	end
 	function M.Set(nextPhase, amount)
 		phase, power = nextPhase, math.clamp(amount or 0, 0, 1)
-		if not phase then M.Restore() end
+		if not phase then M.Restore(); M.AppliedCount=0 end
 	end
 	local function apply()
 		if destroyed then return end
 		M.Restore()
+		M.AppliedCount=0
 		if not phase then return end
 		local crouching = phase == &quot;charging&quot;
 		local alpha = crouching and power or 1
 		local angles = crouching and { root=-10, waist=-10, neck=12, hip=45, knee=-85, ankle=40, shoulder=35, elbow=-35 }
 			or { root=-12, waist=-8, neck=15, hip=25, knee=-50, ankle=25, shoulder=145, elbow=-25 }
 		for _, entry in ipairs(joints) do
-			pcall(function()
+			local ok,err=pcall(function()
 				local joint = entry.Joint
 				if not joint.Parent then return end
 				local down = crouching and entry.Role == &quot;root&quot; and -(M.Rig == &quot;R6&quot; and 0.55 or 0.9) * alpha or 0
@@ -105,7 +106,9 @@ return function(character)
 				entry.Base = joint.Transform
 				entry.Applied = delta * entry.Base
 				joint.Transform = entry.Applied
+				M.AppliedCount += 1
 			end)
+			if not ok then M.LastError=tostring(entry.Joint.Name) .. &quot;: &quot; .. tostring(err) end
 		end
 	end
 	-- Restore before Animator evaluates, and apply after its joint writes.
@@ -180,6 +183,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 	local M = {
 		Enabled = false, Phase = &quot;off&quot;, Power = 0, LastError = nil, AnimationMode = &quot;Auto&quot;,
 		AnimationStatus = { Crouch=&quot;Not requested&quot;, Leap=&quot;Not requested&quot; },
+		AssetErrors = {}, ButtonPresses=0, Releases=0, Launches=0, LastInput=&quot;None&quot;, Motion={Status=&quot;No launch requested&quot;},
 		Config = { ChargeSeconds = 2.2, MinUp = 55, MaxUp = 140, MinForward = 40, MaxForward = 125,
 			CrouchAnimation = &quot;rbxassetid://99086193071059&quot;, LeapAnimation = &quot;rbxassetid://74116059836265&quot;,
 			CrouchPoseFraction = 0.5 },
@@ -192,8 +196,17 @@ return function(Utils, Kit, PoseCtor, Brand)
 	local lastPoseAttempt = -math.huge
 	local flightStart, seenAir, animationNote = 0, false, nil
 	local dragInput, dragStart, dragPosition
-	local function connect(signal, callback)
-		local connection = signal:Connect(callback)
+	local cancel
+	local function connect(signal, callback, label)
+		local connection = signal:Connect(function(...)
+			if stopped then return end
+			local ok, err = pcall(callback, ...)
+			if not ok then
+				M.LastRuntimeError = (label or &quot;Event callback&quot;) .. &quot;: &quot; .. tostring(err)
+				M.LastError = M.LastRuntimeError
+				if cancel then pcall(cancel, &quot;Issue detected · Copy report&quot;) end
+			end
+		end)
 		table.insert(connections, connection)
 		return connection
 	end
@@ -204,7 +217,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		return char, hum, root
 	end
 	local function stopTrack(track)
-		if track then pcall(function() track:Stop(0.1) end) end
+		if track then pcall(function() if track.IsPlaying then track:Stop(0.1) end end) end
 	end
 	local function clearPose()
 		if pose then pose:Destroy(); pose = nil end
@@ -231,7 +244,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		leapButton.BackgroundColor3 = M.Phase == &quot;charging&quot; and Color3.fromRGB(55, 132, 73) or Color3.fromRGB(34, 71, 45)
 		caption.Text = text or (M.Phase == &quot;charging&quot; and &quot;Release to launch&quot; or M.Phase == &quot;airborne&quot; and &quot;In the air&quot; or &quot;Hold to charge · release to leap&quot;)
 	end
-	local function cancel(text)
+	cancel = function(text)
 		activeInput, chargeStart = nil, nil
 		activeChar, activeRoot, activeHum = nil, nil, nil
 		stopTrack(crouch)
@@ -282,7 +295,9 @@ return function(Utils, Kit, PoseCtor, Brand)
 			return false
 		end
 		if track.Length &lt;= 0 then
-			if os.clock() - slot.Started &gt; 1.5 then
+			if M.AssetErrors[slot.Label] then
+				M.AnimationStatus[slot.Label] = &quot;Roblox: &quot; .. M.AssetErrors[slot.Label]
+			elseif os.clock() - slot.Started &gt; 1.5 then
 				M.AnimationStatus[slot.Label] = &quot;No clip data after 1.5s; asset access or load failure possible&quot;
 			else M.AnimationStatus[slot.Label] = &quot;Loading; built-in pose active&quot; end
 			return false
@@ -302,15 +317,8 @@ return function(Utils, Kit, PoseCtor, Brand)
 			elseif targetR6 or targetR15 then
 				slot.Binding = &quot;Compatible body targets&quot;
 			else
-				-- GetTargetNames found nothing matching a standard R6/R15 name. That&#x27;s
-				-- not evidence the clip is wrong -- it&#x27;s exactly what a custom hero
-				-- model (Hulk is a reskinned character, not your default avatar) looks
-				-- like, since its parts aren&#x27;t named Torso/UpperArm/etc. The old code
-				-- treated &quot;I can&#x27;t verify this&quot; as &quot;reject it,&quot; which meant the real
-				-- uploaded clip could NEVER play on a custom rig, only ever the
-				-- built-in fallback pose -- even though the clip had already loaded
-				-- fine (Length &gt; 0) and was presumably authored for this exact rig.
-				slot.Binding = &quot;Compatible, unverified rig&quot;
+				-- An unavailable target list does not prove a rig mismatch. Try the loaded clip.
+				slot.Binding = &quot;Unverified target list&quot;
 			end
 		end
 		if slot.Binding == &quot;Rig mismatch&quot; then
@@ -327,7 +335,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 			lastPoseAttempt=os.clock()
 			local ok, result = pcall(PoseCtor, char)
 			if ok then pose, poseChar = result, char
-			else animationNote = &quot;Pose unavailable: &quot; .. tostring(result) end
+			else M.LastPoseError = tostring(result); animationNote = &quot;Pose unavailable: &quot; .. tostring(result) end
 		end
 	end
 	local function updateAnimation()
@@ -343,6 +351,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 			local ok, err = pcall(function()
 				if not track.IsPlaying and charging then track:Play(0.1, 1, 1) end
 				if charging then
+					track:AdjustWeight(1, 0.05)
 					local stopAt = math.max(0, track.Length - 1/60)
 					track.TimePosition = math.min(stopAt, track.Length * math.clamp(M.Config.CrouchPoseFraction,0,1) * M.Power)
 					track:AdjustSpeed(0)
@@ -361,7 +370,8 @@ return function(Utils, Kit, PoseCtor, Brand)
 				pose.Set(charging and &quot;charging&quot; or &quot;airborne&quot;, M.Power)
 			end
 		end
-		animationNote = useClip and &quot;Animation clip&quot; or pose and pose.Count &gt; 0 and &quot;Built-in pose&quot; or &quot;No compatible body joints&quot;
+		M.LastPoseError = pose and pose.LastError or M.LastPoseError
+		animationNote = useClip and &quot;Animation clip&quot; or M.LastPoseError and &quot;Pose error · Copy report&quot; or pose and pose.Count &gt; 0 and &quot;Built-in pose&quot; or &quot;No compatible body joints&quot;
 	end
 	local function prepareAnimations()
 		local char, hum, root=body()
@@ -377,7 +387,34 @@ return function(Utils, Kit, PoseCtor, Brand)
 		end
 		pcall(ensurePose, char) -- so the joint count is already known before the first charge, not just reported as 0
 	end
+	local function finishWarmup()
+		for track, slot in pairs(clipSlots) do
+			if not slot.Warmed then
+				if track.Length &gt; 0 then
+					slot.Warmed = true; stopTrack(track)
+					M.AnimationStatus[slot.Label] = &quot;Clip loaded; waiting for use&quot;
+				elseif os.clock()-slot.Started &gt;= 3 then
+					slot.Warmed = true; stopTrack(track)
+					M.AnimationStatus[slot.Label] = M.AssetErrors[slot.Label] or &quot;No clip data after 3s; built-in pose available&quot;
+				end
+			end
+		end
+	end
+	local function observeMotion()
+		local motion=M.Motion
+		if not motion.Root or motion.Done or not motion.Origin then return end
+		if not motion.Root.Parent then motion.Done=true;motion.Status=&quot;Character changed before observation finished&quot;;return end
+		local distance=(motion.Root.Position-motion.Origin).Magnitude
+		motion.Peak=math.max(motion.Peak,distance);motion.Latest=distance
+		local elapsed=os.clock()-motion.Started
+		if elapsed &gt;= 0.25 then
+			motion.Status=motion.Peak &gt;= 0.5 and &quot;Local travel observed; server acceptance unverified&quot; or &quot;No local travel observed yet&quot;
+			if motion.Peak &gt;= 3 and distance &lt; 1 then motion.Status=&quot;Returned near start; cause unverified&quot; end
+		end
+		if elapsed &gt;= 0.8 then motion.Done=true end
+	end
 	local function begin(input)
+		M.ButtonPresses += 1; M.LastInput=tostring(input.UserInputType) .. &quot; begin&quot;
 		if stopped or not M.Enabled or M.Phase ~= &quot;ready&quot; or activeInput then return end
 		local char, hum, root = body()
 		local reason = blocked(char, hum, root, true)
@@ -391,7 +428,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		activeChar, activeHum, activeRoot = char, hum, root
 		M.LastError, M.Power, M.Phase = nil, 0, &quot;charging&quot;
 		if crouch then
-			local ok = pcall(function() crouch:Play(0.12, 1, 1); crouch.TimePosition = 0 end)
+			local ok = pcall(function() crouch:Play(0.12, 1, 1); crouch:AdjustWeight(1, 0.12); crouch.TimePosition = 0 end)
 			if not ok then animationNote = &quot;Animation unavailable&quot; end
 		end
 		updateAnimation()
@@ -399,6 +436,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 	end
 	local function release()
 		if M.Phase ~= &quot;charging&quot; or not activeInput then return end
+		M.Releases += 1; M.LastInput=tostring(activeInput.UserInputType) .. &quot; release&quot;
 		local char, hum, root = body()
 		local reason = blocked(char, hum, root, true)
 		if char ~= activeChar or root ~= activeRoot or hum ~= activeHum then reason = &quot;Character changed; charge cancelled&quot; end
@@ -425,9 +463,12 @@ return function(Utils, Kit, PoseCtor, Brand)
 			root:ApplyImpulse((targetVelocity - root.AssemblyLinearVelocity) * mass)
 		end)
 		if not ok then M.LastError = tostring(err); cancel(&quot;Leap could not launch&quot;); return end
+		M.Launches += 1
+		M.Motion={Status=&quot;Impulse applied; observing travel&quot;,Root=root,Origin=root.Position,Started=os.clock(),Requested=targetVelocity,Peak=0,Latest=0}
+
 		if not jumpAttempted then jump = loadTrack(char, hum, M.Config.LeapAnimation, &quot;Leap&quot;); jumpAttempted = true end
 		if jump then
-			local played = pcall(function() jump:Play(0.05, 1, 1); jump.TimePosition=0 end)
+			local played = pcall(function() jump:Play(0.05, 1, 1); jump:AdjustWeight(1, 0.05); jump.TimePosition=0 end)
 			if not played then animationNote = &quot;Animation unavailable&quot; end
 		end
 		flightStart, seenAir = os.clock(), false
@@ -462,7 +503,7 @@ return function(Utils, Kit, PoseCtor, Brand)
 		end
 		Kit.create(&quot;TextLabel&quot;, { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face(&quot;BuilderSans&quot;, Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = &quot;HULK / LEAP&quot;, TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = &quot;HULK / LEAP · 1.2&quot;, TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create(&quot;TextButton&quot;, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = &quot;×&quot;, TextSize = 20, TextColor3 = Kit.SUB }, dock)
 		leapButton = Kit.create(&quot;TextButton&quot;, { Name = &quot;HoldLeap&quot;, Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(118, 82),
@@ -524,7 +565,8 @@ return function(Utils, Kit, PoseCtor, Brand)
 		end
 		M.Enabled, M.Phase = true, &quot;ready&quot;; M.Power = 0
 		M.Gui = gui
-		pcall(prepareAnimations)
+		local prepared, prepareError=pcall(prepareAnimations)
+		if not prepared then M.LastRuntimeError=&quot;Animation preparation: &quot; .. tostring(prepareError) end
 		paint()
 		if M.OnEnabledChanged then pcall(M.OnEnabledChanged, true) end
 		return true
@@ -547,16 +589,28 @@ return function(Utils, Kit, PoseCtor, Brand)
 	connect(player.CharacterRemoving, function()
 		cancel(&quot;Respawning…&quot;); stopTrack(jump); clearTracks()
 	end)
+	local logOk, logService=pcall(function() return game:GetService(&quot;LogService&quot;) end)
+	if logOk and logService.MessageOut then
+		connect(logService.MessageOut,function(message)
+			if type(message)~=&quot;string&quot; or message:find(&quot;Rift Hub / Hulk&quot;,1,true) then return end
+			local lower=message:lower()
+			if not (lower:find(&quot;fail&quot;,1,true) or lower:find(&quot;error&quot;,1,true) or lower:find(&quot;permission&quot;,1,true) or lower:find(&quot;not authorized&quot;,1,true)) then return end
+			for label,id in pairs({Crouch=&quot;99086193071059&quot;,Leap=&quot;74116059836265&quot;}) do
+				if message:find(id,1,true) then M.AssetErrors[label]=message:gsub(&quot;[%c]&quot;,&quot; &quot;):sub(1,500) end
+			end
+		end,&quot;Animation log observer&quot;)
+	end
 	local lastViewport
 	connect(RunService.Heartbeat, function()
 		if stopped or not M.Enabled then return end
 		local char, hum, root = body()
+		observeMotion()
 		local camera = workspace.CurrentCamera
 		if camera and camera.ViewportSize ~= lastViewport then lastViewport = camera.ViewportSize; clampDock() end
 		if trackChar and trackChar ~= char then clearTracks() end
 		if M.Phase == &quot;ready&quot; then
 			prepareAnimations()
-			stopTrack(crouch); stopTrack(jump)
+			finishWarmup()
 		elseif M.Phase == &quot;charging&quot; then
 			local reason = blocked(char, hum, root, true)
 			if char ~= activeChar or hum ~= activeHum or root ~= activeRoot then reason = &quot;Character changed; charge cancelled&quot; end
@@ -575,13 +629,31 @@ return function(Utils, Kit, PoseCtor, Brand)
 		end
 	end)
 	function M.Diagnostics()
-		local char,hum=body()
-		return table.concat({&quot;Rift Hub / Hulk / 1.1&quot;, &quot;Phase: &quot; .. M.Phase .. &quot; | pose mode: &quot; .. M.AnimationMode,
+		local char,hum,root=body()
+		local function safeText(get)
+			local ok,value=pcall(get);return ok and tostring(value) or &quot;unavailable&quot;
+		end
+		return table.concat({&quot;Rift Hub / Hulk / 1.2&quot;, &quot;Phase: &quot; .. M.Phase .. &quot; | pose mode: &quot; .. M.AnimationMode,
 			&quot;Rig: &quot; .. (hum and tostring(hum.RigType) or &quot;none&quot;),
+			&quot;Inputs: presses=&quot; .. M.ButtonPresses .. &quot; | releases=&quot; .. M.Releases .. &quot; | launches=&quot; .. M.Launches .. &quot; | last=&quot; .. M.LastInput,
+			&quot;Character: &quot; .. safeText(function() return char:GetFullName() end),
+			&quot;Body: health=&quot; .. safeText(function() return hum.Health end) .. &quot; | floor=&quot; .. safeText(function() return hum.FloorMaterial end)
+				.. &quot; | anchored=&quot; .. safeText(function() return root.Anchored end) .. &quot; | PlatformStand=&quot; .. safeText(function() return hum.PlatformStand end),
+			&quot;Locks: canRun=&quot; .. safeText(function() return char:GetAttribute(&quot;canRun&quot;) end) .. &quot; | LOCKED_INPUTS=&quot; .. safeText(function() return char:GetAttribute(&quot;LOCKED_INPUTS&quot;) end)
+				.. &quot; | cutsceneLock=&quot; .. safeText(function() return char:GetAttribute(&quot;cutsceneLock&quot;) end),
 			&quot;Crouch 99086193071059: &quot; .. M.AnimationStatus.Crouch,
 			&quot;Leap 74116059836265: &quot; .. M.AnimationStatus.Leap,
+			&quot;Crouch playback: playing=&quot; .. safeText(function() return crouch.IsPlaying end) .. &quot; | length=&quot; .. safeText(function() return crouch.Length end)
+				.. &quot; | weight=&quot; .. safeText(function() return crouch.WeightCurrent end) .. &quot; | time=&quot; .. safeText(function() return crouch.TimePosition end),
+			&quot;Leap playback: playing=&quot; .. safeText(function() return jump.IsPlaying end) .. &quot; | length=&quot; .. safeText(function() return jump.Length end)
+				.. &quot; | weight=&quot; .. safeText(function() return jump.WeightCurrent end) .. &quot; | time=&quot; .. safeText(function() return jump.TimePosition end),
 			&quot;Built-in joints: &quot; .. tostring(pose and pose.Count or 0) .. &quot; (&quot; .. (pose and pose.Describe and pose.Describe() or &quot;pose not initialized yet&quot;) .. &quot;)&quot;,
+			&quot;Pose writes: &quot; .. tostring(pose and pose.AppliedCount or 0) .. &quot; | last pose error=&quot; .. tostring(M.LastPoseError or (pose and pose.LastError)),
 			&quot;Current animation: &quot; .. tostring(animationNote), &quot;Last movement error: &quot; .. tostring(M.LastError),
+			&quot;Last runtime error: &quot; .. tostring(M.LastRuntimeError),
+			&quot;Movement observation: &quot; .. M.Motion.Status .. &quot; | peak travel=&quot; .. string.format(&quot;%.2f&quot;,M.Motion.Peak or 0) .. &quot; studs&quot;,
+			&quot;Requested launch velocity: &quot; .. tostring(M.Motion.Requested),
+			&quot;Roblox crouch error: &quot; .. tostring(M.AssetErrors.Crouch), &quot;Roblox leap error: &quot; .. tostring(M.AssetErrors.Leap),
 			&quot;Rig binding, asset access, and playback are client observations; server movement acceptance is unverified.&quot;}, &quot;\n&quot;)
 	end
 	function M.Panic() M.SetEnabled(false); clearTracks() end
@@ -600,7 +672,7 @@ end)()
 local brand=BrandCtor(&quot;https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/assets/rift_logo.jpg&quot;)
 local api=LeapCtor(Utils,Kit,PoseCtor,brand)
 api.Game=&quot;Hulk&quot;
-api.Version=&quot;1.1&quot;
+api.Version=&quot;1.2&quot;
 local stop=api.Stop
 function api.Unload()
  stop()

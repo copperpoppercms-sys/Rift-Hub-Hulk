@@ -12,12 +12,14 @@ Hold **LEAP** to charge for up to 2.2 seconds. The adjacent bar shows power, and
 
 - Crouch animation ID: `99086193071059`.
 - Leap animation ID: `74116059836265`.
-- Clips are primed at normal playback speed with zero weight before use. Their Animation instances remain alive while Roblox loads them.
-- **Pose: Auto** uses a clip when it has loaded and its body targets match the rig. A zero-length, failed, mismatched or unverified clip uses a local joint pose instead. Late-loading compatible clips can replace the fallback cleanly.
+- Clips are primed at normal playback speed with zero weight before use. They stay alive during a bounded loading window and explicitly regain full weight when used. Their Animation instances remain alive while Roblox loads them.
+- **Pose: Auto** uses a clip when it has loaded and its body targets match the rig. A zero-length, failed or clearly mismatched clip uses a local joint pose instead. Clips with unrecognized target names are tried rather than rejected; target compatibility remains unverified. Late-loading compatible clips can replace the fallback cleanly.
 - **Pose: Built-in** forces the local poses. R15 rigs bend at the hips and knees; R6 rigs use their available torso, hip and shoulder joints.
-- **Copy animation report** includes rig type, clip readiness or error, fallback joint count, current phase and movement errors. Copy it after trying a charge and leap.
+- **Copy animation report** includes rig type, clip readiness or error, fallback joint count, current phase and movement errors. Version 1.2 also reports button presses, releases, launch requests, track playback weights, actual pose-write errors and observed local travel after a launch. Roblox log errors are collected only when they mention one of the two supplied animation IDs. Copy it after trying a charge and leap.
 
 The original supplied animations may require permission from their owner and must match the avatar rig. This script cannot grant asset access. The built-in poses use Motor6D transforms locally; they restore only transforms still owned by this controller and leave `Animate`, C0, WalkSpeed and player controls alone. Pose appearance and server acceptance of the launch still need live Roblox testing. It does not bypass movement rules or cooldowns.
+
+The upstream custom-rig detection changes from commit `6f8825f` are retained.
 
 ## Files
 
