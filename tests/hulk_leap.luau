@@ -34,7 +34,7 @@ local UDim={new=function(...) return {...} end}
 local Color3={fromRGB=function(...) return {...} end}
 local cf={}
 local CFrame={}
-function CFrame.new(x,y,z) return setmetatable({X=x or 0,Y=y or 0,Z=z or 0,Angle=0},cf) end
+function CFrame.new(x,y,z) if type(x)=="table" then x,y,z=x.X,x.Y,x.Z end;return setmetatable({X=x or 0,Y=y or 0,Z=z or 0,Angle=0},cf) end
 function CFrame.Angles(x,y,z) local c=CFrame.new();c.Angle=x or 0;return c end
 cf.__index=function(c,key)
  if key=="Rotation" then return CFrame.Angles(c.Angle,0,0) end
@@ -49,6 +49,9 @@ local function object(class,props,parent)
 	local o={ClassName=class,children={},InputBegan=signal(),Activated=signal(),Parent=parent}
 	for key,value in pairs(props or {}) do o[key]=value end
 	if parent and parent.children then table.insert(parent.children,o) end
+	function o:Play() self.IsPlaying=true end
+	function o:Stop() self.IsPlaying=false end
+	function o:IsA(kind) return self.ClassName==kind or (kind=="BasePart" and self.ClassName=="Part") end
 	function o:Destroy() for _,child in ipairs(self.children) do child:Destroy() end;self.Parent=nil;self.Destroyed=true end
 	table.insert(created,o);return o
 end
@@ -73,7 +76,7 @@ local function character(rig)
 	end
 	local root={Parent={},Anchored=false,AssemblyMass=10,AssemblyLinearVelocity=Vector3.zero,Position=Vector3.zero,CFrame={LookVector=Vector3.new(0,0,-1)},impulses=0}
 	function root:ApplyImpulse(impulse) self.impulses+=1;self.AssemblyLinearVelocity=self.AssemblyLinearVelocity+impulse*(1/self.AssemblyMass) end
-	local hum={RigType=rig or Enum.HumanoidRigType.R15,Health=100,FloorMaterial=Enum.Material.Concrete,PlatformStand=false,Sit=false,WalkSpeed=24,MoveDirection=Vector3.zero}
+	local hum={RigType=rig or Enum.HumanoidRigType.R15,Health=100,FloorMaterial=Enum.Material.Concrete,PlatformStand=false,Sit=false,WalkSpeed=24,CameraOffset=Vector3.zero,MoveDirection=Vector3.zero}
 	function hum:FindFirstChildOfClass(class) if class=="Animator" then return animator end end
 	function hum:ChangeState(state) self.LastState=state end
 	local char={root=root,hum=hum,attributes={},joints={}}
@@ -91,10 +94,14 @@ local function character(rig)
 end
 local player={Character=character(),CharacterRemoving=signal()}
 function player:WaitForChild() return {} end
-local UIS={InputEnded=signal(),InputChanged=signal(),WindowFocusReleased=signal()}
+local UIS={InputBegan=signal(),InputEnded=signal(),InputChanged=signal(),WindowFocusReleased=signal()}
 local run={Heartbeat=signal(),PreAnimation=signal(),PreSimulation=signal()}
 local logs={MessageOut=signal()}
-local workspace={CurrentCamera={ViewportSize=Vector3.new(390,844,0)}}
+local workspace={CurrentCamera={ViewportSize=Vector3.new(390,844,0),FieldOfView=70}}
+local RaycastParams={new=function() return {} end}
+local rayHit=nil
+function workspace:Raycast() return rayHit end
+local function typeof(value) return getmetatable(value)==vector and "Vector3" or type(value) end
 local game={GetService=function(_,name)
 	if name=="Players" then return {LocalPlayer=player} elseif name=="RunService" then return run elseif name=="UserInputService" then return UIS elseif name=="LogService" then return logs else return {} end
 end}
@@ -104,6 +111,9 @@ local clock=0
 local os={clock=function() return clock end}
 local createPose=(function()
 -- POSE
+end)()
+local createEffects=(function()
+-- EFFECTS
 end)()
 local create=(function()
 -- HULK LEAP
@@ -118,6 +128,8 @@ local function mouse() return {UserInputType=Enum.UserInputType.MouseButton1,Use
 local function land(m)
 	player.Character.hum.FloorMaterial=Enum.Material.Air;step(.2)
 	player.Character.hum.FloorMaterial=Enum.Material.Concrete;step(.4)
+	check(m.Phase=="landing","touchdown did not enter the Hulk landing pose")
+	step(.23)
 	check(m.Phase=="ready","landing did not reset the charge")
 end
 local m=create(Utils,Kit,createPose)
@@ -444,6 +456,109 @@ for _,kind in ipairs({"Motor6D","AnimationConstraint","Bone"}) do
  check(arm.Transform==externalArm and forearm.Transform==originalForearm,"arm cleanup overwrote another owner on "..kind)
 end
 check(run.PreAnimation:Count()==0 and run.PreSimulation:Count()==0,"airborne arm fix leaked callbacks")
+-- Full Hulk traversal: camera-directed bound, bounded air steering, smash and recovery.
+player.Character=character();animationLength=2;targetNames={"UpperTorso","LeftUpperArm"}
+workspace.CurrentCamera.CFrame={LookVector=Vector3.new(1,0,0)}
+workspace.Gravity=196.2
+local traversal=create(Utils,Kit,createPose,nil,createEffects);traversal.SetEnabled(true)
+check(not traversal.Slam(),"smash launched from the ground")
+widget("QuickBound").Activated:Fire()
+check(traversal.Phase=="airborne" and traversal.Bounds==1,"bound button did not launch")
+near(player.Character.root.AssemblyLinearVelocity.X,105);near(player.Character.root.AssemblyLinearVelocity.Y,85)
+check(not traversal.Bound(),"bound stacked in midair")
+player.Character.hum.FloorMaterial=Enum.Material.Air
+player.Character.hum.MoveDirection=Vector3.new(0,0,-1)
+local initial=player.Character.root.AssemblyLinearVelocity
+step(.1)
+local steered=player.Character.root.AssemblyLinearVelocity
+check((steered-initial).Magnitude<=85*.05+.00001,"air steering exceeded acceleration cap")
+near(steered.Y,initial.Y)
+check(steered.Z<0 and traversal.AirSteers==1,"joystick did not steer the leap")
+local horizontal=Vector3.new(steered.X,0,steered.Z).Magnitude
+check(horizontal<=105,"air steering accumulated speed")
+player.Character.hum.MoveDirection=Vector3.zero
+local coast=player.Character.root.AssemblyLinearVelocity
+step(.1)
+check(player.Character.root.AssemblyLinearVelocity==coast,"no-input flight did not preserve momentum")
+player.Character.root.AssemblyLinearVelocity=Vector3.new(coast.X,-20,coast.Z);step(.1)
+check(animationTracks[#animationTracks].Id=="rbxassetid://180436148" and animationTracks[#animationTracks].IsPlaying,"fall animation was not selected")
+local beforeSmash=player.Character.root.impulses
+widget("DownSlam").Activated:Fire()
+check(traversal.Phase=="slamming" and traversal.Slams==1,"smash button did not dive")
+near(player.Character.root.AssemblyLinearVelocity.Y,-180)
+check(animationTracks[#animationTracks].Id=="rbxassetid://113926956994381","smash clip was not selected")
+check(not traversal.Slam() and player.Character.root.impulses==beforeSmash+1,"smash stacked repeatedly")
+player.Character.hum.MoveDirection=Vector3.new(-1,0,0)
+local diving=player.Character.root.AssemblyLinearVelocity
+step(.05)
+check(player.Character.root.AssemblyLinearVelocity==diving,"steering overrode the downward smash")
+player.Character.hum.FloorMaterial=Enum.Material.Concrete;step(.1)
+check(traversal.Phase=="landing" and traversal.Landings==1,"smash did not land once")
+check(animationTracks[#animationTracks].Id=="rbxassetid://107995270438202","landing clip was not selected")
+check(not traversal.Bound(),"bound interrupted touchdown recovery")
+step(.23)
+check(traversal.Phase=="ready" and traversal.Landings==1,"touchdown did not recover")
+check(player.Character.hum.WalkSpeed==24 and workspace.Gravity==196.2,"traversal changed normal movement or gravity")
+check(not traversal.LastRuntimeError and not traversal.LastEffectError,"traversal/effects raised an error")
+widget("EffectsToggle").Activated:Fire()
+check(not traversal.EffectsEnabled and workspace.CurrentCamera.FieldOfView==70,"effects toggle did not restore FOV")
+-- Keyboard is opt-in per unprocessed press and leaves focused text input alone.
+local key={UserInputType=Enum.UserInputType.Keyboard,UserInputState=Enum.UserInputState.Begin,KeyCode=Enum.KeyCode.Z}
+UIS.InputBegan:Fire(key,true);check(traversal.Phase=="ready","processed key started a charge")
+UIS.GetFocusedTextBox=function() return {} end
+UIS.InputBegan:Fire(key,false);check(traversal.Phase=="ready","text input started a charge")
+UIS.GetFocusedTextBox=function() return nil end
+UIS.InputBegan:Fire(key,false);step(.5)
+check(traversal.Phase=="charging","keyboard charge did not begin")
+UIS.InputEnded:Fire(key);check(traversal.Phase=="airborne","keyboard charge did not release")
+player.Character.hum.FloorMaterial=Enum.Material.Air
+player.Character.attributes.LOCKED_INPUTS=true;local lockedCount=player.Character.root.impulses;step(.1)
+check(traversal.Phase=="ready" and player.Character.root.impulses==lockedCount,"air steering ignored a game movement lock")
+traversal.Stop()
+check(UIS.InputBegan:Count()==0,"keyboard listener leaked")
+workspace.CurrentCamera.CFrame=nil
+-- Missing action clips are attempted once per rig, then use fallback without blocking movement.
+player.Character=character();animationFailure=true
+local denied=create(Utils,Kit,createPose);denied.SetEnabled(true);check(denied.Bound(),"denied leap clip blocked bound")
+player.Character.hum.FloorMaterial=Enum.Material.Air
+check(denied.Slam(),"denied smash clip blocked movement")
+local assetsBefore=#created;step(.1);step(.1)
+check(#created==assetsBefore and denied.AnimationStatus.Slam:find("Load failed",1,true),"failed smash clip retried every frame")
+denied.SetEnabled(false);check(denied.Phase=="off","disable did not end smash");denied.Stop();animationFailure=false
+-- Local impact effects are capped, fade, and restore only values still owned by this script.
+player.Character=character();workspace.CurrentCamera.FieldOfView=76
+local ground=object("Part",{Color=Color3.fromRGB(95,100,80)})
+rayHit={Position=Vector3.zero,Normal=Vector3.new(0,1,0),Material=Enum.Material.Concrete,Instance=ground}
+local function liveFX()
+ local n=0;for _,o in ipairs(created) do if not o.Destroyed and (o.Name=="RiftHulkShockwave" or o.Name=="RiftHulkDebris") then n+=1 end end
+ return n
+end
+local effects=createEffects(Kit)
+for _=1,6 do effects.Pulse(Vector3.zero,1,true,player.Character) end
+check(liveFX()<=28,"impact debris grew without a bound")
+local cameraOffset=player.Character.hum.CameraOffset
+player.Character.root.AssemblyLinearVelocity=Vector3.new(250,40,0)
+effects.Update("airborne",player.Character,player.Character.hum,player.Character.root,1,.1)
+check(workspace.CurrentCamera.FieldOfView>76 and workspace.CurrentCamera.FieldOfView<=110,"speed FOV did not respond within bounds")
+check(widget("RiftHulkWind").IsPlaying,"airborne wind did not play")
+check(player.Character.hum.CameraOffset~=cameraOffset,"impact camera response was missing")
+local windObject=widget("RiftHulkWind")
+local oldCamera=workspace.CurrentCamera
+workspace.CurrentCamera={FieldOfView=82,ViewportSize=oldCamera.ViewportSize}
+effects.Update("airborne",player.Character,player.Character.hum,player.Character.root,1,.1)
+near(oldCamera.FieldOfView,76)
+for _=1,12 do effects.Update("ready",player.Character,player.Character.hum,player.Character.root,0,.1) end
+check(liveFX()==0,"impact objects did not expire")
+effects.Clear();near(workspace.CurrentCamera.FieldOfView,82)
+check(player.Character.hum.CameraOffset==cameraOffset,"camera offset did not restore")
+effects.Pulse(Vector3.zero,1,true,player.Character)
+effects.Update("airborne",player.Character,player.Character.hum,player.Character.root,1,.1)
+workspace.CurrentCamera.FieldOfView=91
+local externalOffset=Vector3.new(2,0,0);player.Character.hum.CameraOffset=externalOffset
+effects.SetEnabled(false)
+check(workspace.CurrentCamera.FieldOfView==91 and player.Character.hum.CameraOffset==externalOffset,"effect cleanup overwrote external camera changes")
+check(liveFX()==0 and windObject.Destroyed,"disabled effects leaked objects")
+effects.Destroy();effects.Destroy();rayHit=nil
 -- Execute the generated standalone, including its own minimal UI kit and logo fallback.
 local standaloneEnv={}
 local getgenv=function() return standaloneEnv end

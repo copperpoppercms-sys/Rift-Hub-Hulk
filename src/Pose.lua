@@ -129,9 +129,13 @@ return function(character)
 		M.Restore();M.AppliedCount=0
 		if not phase then return end
 		local crouching=phase=="charging"
-		local armsOnly=phase=="airborne-arms"
+		local armsOnly=phase:find("-arms",1,true)~=nil
+		local slamming=phase:find("slamming",1,true)~=nil
+		local landing=phase:find("landing",1,true)~=nil
 		local alpha=crouching and power or 1
-		local angles=crouching and {root=-10,waist=-10,neck=12,hip=45,knee=-85,ankle=40,shoulder=35,elbow=-35}
+		local angles=slamming and {root=-18,waist=-20,neck=15,hip=15,knee=-25,ankle=10,shoulder=155,elbow=25,wrist=0}
+			or landing and {root=-8,waist=-20,neck=15,hip=55,knee=-95,ankle=35,shoulder=45,elbow=30,wrist=0}
+			or crouching and {root=-10,waist=-10,neck=12,hip=45,knee=-85,ankle=40,shoulder=35,elbow=-35}
 			or {root=-12,waist=-8,neck=15,hip=25,knee=-50,ankle=25,shoulder=105,elbow=20,wrist=0}
 		for _,entry in ipairs(joints) do
 			local ok,err=pcall(function()
@@ -139,7 +143,7 @@ return function(character)
 				if not joint.Parent then return end
 				local arm=entry.Role=="shoulder" or entry.Role=="elbow" or entry.Role=="wrist"
 				if armsOnly and not arm then return end
-				local down=crouching and entry.Role=="root" and -(M.Rig=="R6" and .55 or .9)*alpha or 0
+				local down=(crouching or landing) and entry.Role=="root" and -(M.Rig=="R6" and .55 or .9)*alpha or 0
 				local rotation=entry.Rest().Rotation
 				local delta=rotation:Inverse()*CFrame.new(0,down,0)*CFrame.Angles(math.rad(angles[entry.Role] or 0)*alpha,0,0)*rotation
 				entry.Base=joint.Transform
