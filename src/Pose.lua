@@ -1,9 +1,10 @@
 -- Local poses for Motor6D, AnimationConstraint and skinned Bone rigs.
 -- Only Transform is written; bind frames, attachments and movement controls are unchanged.
 local RunService = game:GetService("RunService")
-return function(character)
+return function(character, Motion)
 	local joints, connections = {}, {}
 	local phase, power, destroyed = nil, 0, false
+	local phaseSince, motionSpeed = os.clock(), 0
 	local M = { Count=0, Rig="Custom", AppliedCount=0, LastError=nil,
 		Inventory={Motor6D=0,AnimationConstraint=0,Bone=0}, ScanNotes={}, PendingBindings=0 }
 	local function read(object, key)
@@ -69,7 +70,9 @@ return function(character)
 			if #M.ScanNotes<12 then table.insert(M.ScanNotes,joint.Name.."["..kind.."] "..(not role and "role unknown" or "binding incomplete")) end
 			return
 		end
-		local entry={Joint=joint,Role=role,Kind=kind,Rest=rest}
+		local sideName=(tostring(joint.Name).." "..tostring(read(a0,"Name")).." "..tostring(read(part1,"Name"))):lower()
+		local side=sideName:find("left",1,true) and -1 or 1
+		local entry={Joint=joint,Role=role,Kind=kind,Rest=rest,Side=side}
 		table.insert(kind=="Bone" and bones or rigid,entry)
 	end
 	for _, joint in ipairs(character:GetDescendants()) do
@@ -120,8 +123,10 @@ return function(character)
 			end
 		end
 	end
-	function M.Set(nextPhase, amount)
+	function M.Set(nextPhase, amount, speed)
+		if phase~=nextPhase then phaseSince=os.clock() end
 		phase,power=nextPhase,math.clamp(amount or 0,0,1)
+		motionSpeed=speed or 0
 		if not phase then M.Restore();M.AppliedCount=0 end
 	end
 	local function apply()
@@ -144,12 +149,19 @@ return function(character)
 				local arm=entry.Role=="shoulder" or entry.Role=="elbow" or entry.Role=="wrist"
 				if armsOnly and not arm then return end
 				local down=(crouching or landing) and entry.Role=="root" and -(M.Rig=="R6" and .55 or .9)*alpha or 0
+				local x,y,z=math.rad(angles[entry.Role] or 0)*alpha,0,0
+				if Motion then
+					local sample=Motion.Sample(phase,os.clock()-phaseSince,power,entry.Side,motionSpeed)
+					local value=sample[entry.Role] or {}
+					x,y,z=math.rad(value[1] or 0),math.rad(value[2] or 0),math.rad(value[3] or 0)
+					down=entry.Role=="root" and (value[4] or 0)*(M.Rig=="R6" and .61 or 1) or 0
+				end
 				local rotation=entry.Rest().Rotation
-				local delta=rotation:Inverse()*CFrame.new(0,down,0)*CFrame.Angles(math.rad(angles[entry.Role] or 0)*alpha,0,0)*rotation
+				local delta=rotation:Inverse()*CFrame.new(0,down,0)*CFrame.Angles(x,y,z)*rotation
 				entry.Base=joint.Transform
 				-- Use a rest-relative arm pose while airborne. Adding it to the clip's
 				-- shoulder/elbow motion can bend arms behind the body or fold them twice.
-				entry.Applied=(not crouching and arm) and delta or delta*entry.Base
+				entry.Applied=(Motion or (not crouching and arm)) and delta or delta*entry.Base
 				joint.Transform=entry.Applied;M.AppliedCount+=1
 			end)
 			if not ok then M.LastError=entry.Joint.Name..": "..tostring(err) end

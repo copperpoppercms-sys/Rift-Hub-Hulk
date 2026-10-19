@@ -1,5 +1,5 @@
--- Rift Hub / Hulk / 2.0 | standalone Hulk traversal
--- All controller code is embedded here; only the user logo is downloaded.
+-- Rift Hub / Hulk / 3.0 | Rift Gamma original Hulk motion
+-- Original motion and controller code are embedded. Catalog playback is optional.
 local env = type(getgenv) == "function" and getgenv() or _G
 local existing = env.RiftHulkCharacter
 if type(existing) == "table" and type(existing.Unload) == "function" then pcall(existing.Unload) end
@@ -17,13 +17,135 @@ function Kit.create(class,props,parent)
  if parent then obj.Parent=parent end
  return obj
 end
-local PoseCtor=(function()
+local HulkMotion=(function()
+-- Original Rift Gamma keyframes, authored here rather than copied from a game clip.
+-- Angles are parent-body axes in degrees; root Y is a visual joint offset only.
+local function pose(values) return values end
+local clips = {
+	idle={Loop=2.4,Frames={
+		{0,pose({root={-4,0,0,-.04},waist={-8,0,0},neck={8,0,0},hip={3,0,4},knee={-6,0,0},shoulder={7,0,18},elbow={28,0,0},wrist={-5,0,0}})},
+		{1.2,pose({root={-3,0,0,0},waist={-5,0,0},neck={6,0,0},hip={2,0,4},knee={-4,0,0},shoulder={10,0,20},elbow={32,0,0},wrist={-5,0,0}})},
+		{2.4,pose({root={-4,0,0,-.04},waist={-8,0,0},neck={8,0,0},hip={3,0,4},knee={-6,0,0},shoulder={7,0,18},elbow={28,0,0},wrist={-5,0,0}})},
+	}},
+	charging={Frames={
+		{0,pose({root={-4,0,0,0},waist={-8,0,0},neck={8,0,0},hip={5,0,5},knee={-10,0,0},ankle={5,0,0},shoulder={8,0,18},elbow={30,0,0}})},
+		{.55,pose({root={-9,0,0,-.44},waist={-20,0,0},neck={18,0,0},hip={30,0,8},knee={-60,0,0},ankle={30,0,0},shoulder={-12,0,23},elbow={65,0,0}})},
+		{1,pose({root={-12,0,0,-.9},waist={-28,0,0},neck={24,0,0},hip={52,0,10},knee={-100,0,0},ankle={48,0,0},shoulder={-20,0,25},elbow={80,0,0},wrist={-8,0,0}})},
+	}},
+	launching={Frames={
+		{0,pose({root={-12,0,0,-.18},waist={-22,0,0},neck={20,0,0},hip={28,0,8},knee={-55,0,0},ankle={25,0,0},shoulder={35,0,18},elbow={65,0,0}})},
+		{.12,pose({root={-14,0,0,0},waist={-10,0,0},neck={13,0,0},hip={-8,0,5},knee={-10,0,0},ankle={16,0,0},shoulder={100,0,15},elbow={25,0,0}})},
+		{.32,pose({root={-12,0,0,0},waist={-8,0,0},neck={15,0,0},hip={25,0,7},knee={-50,0,0},ankle={25,0,0},shoulder={105,0,14},elbow={20,0,0},wrist={0,0,0}})},
+	}},
+	airborne={Frames={{0,pose({root={-12,0,0,0},waist={-8,0,0},neck={15,0,0},hip={25,0,7},knee={-50,0,0},ankle={25,0,0},shoulder={105,0,14},elbow={20,0,0},wrist={0,0,0}})}}},
+	falling={Frames={{0,pose({root={-6,0,0,0},waist={-14,0,0},neck={20,0,0},hip={42,0,10},knee={-72,0,0},ankle={30,0,0},shoulder={62,0,28},elbow={42,0,0},wrist={0,0,0}})}}},
+	slamming={Frames={
+		{0,pose({root={-8,0,0,0},waist={-8,0,0},neck={15,0,0},hip={25,0,10},knee={-45,0,0},shoulder={105,0,14},elbow={30,0,0}})},
+		{.16,pose({root={-22,0,0,0},waist={-25,0,0},neck={22,0,0},hip={10,0,7},knee={-20,0,0},ankle={15,0,0},shoulder={150,0,7},elbow={28,0,0}})},
+	}},
+	landing={Frames={
+		{0,pose({root={-16,0,0,-.65},waist={-32,0,0},neck={28,0,0},hip={50,0,10},knee={-95,0,0},ankle={45,0,0},shoulder={42,0,10},elbow={20,0,0}})},
+		{.09,pose({root={-18,0,0,-.9},waist={-38,0,0},neck={32,0,0},hip={60,0,12},knee={-110,0,0},ankle={50,0,0},shoulder={45,0,12},elbow={16,0,0}})},
+		{.38,pose({root={-4,0,0,-.04},waist={-8,0,0},neck={8,0,0},hip={3,0,4},knee={-6,0,0},shoulder={7,0,18},elbow={28,0,0}})},
+	}},
+	roaring={Frames={
+		{0,pose({root={-4,0,0,-.04},waist={-8,0,0},neck={8,0,0},hip={4,0,8},knee={-8,0,0},shoulder={8,0,20},elbow={30,0,0}})},
+		{.3,pose({root={-7,0,0,-.15},waist={-18,0,0},neck={18,0,0},hip={8,0,10},knee={-18,0,0},shoulder={55,0,22},elbow={75,0,0}})},
+		{.6,pose({root={3,0,0,0},waist={8,0,0},neck={-12,0,0},hip={3,0,10},knee={-6,0,0},shoulder={-8,0,40},elbow={50,0,0}})},
+		{1.05,pose({root={0,0,0,0},waist={4,0,0},neck={-8,0,0},hip={4,0,8},knee={-8,0,0},shoulder={-4,0,32},elbow={40,0,0}})},
+		{1.35,pose({root={-4,0,0,-.04},waist={-8,0,0},neck={8,0,0},hip={4,0,8},knee={-8,0,0},shoulder={8,0,20},elbow={30,0,0}})},
+	}},
+}
+local M = {Name="Rift Gamma / original Hulk motion",Version=1}
+function M.Sample(phase, elapsed, power, side, speed)
+	phase=phase:gsub("%-arms$","")
+	side=side or 1
+	if phase=="walk" or phase=="run" then
+		local running=phase=="run"
+		local rate=running and 8 or 5.5
+		local wave=math.sin(elapsed*rate+(side<0 and math.pi or 0))
+		local stride=(running and 38 or 22)*wave
+		return {root={running and -13 or -6,0,0,-math.abs(math.sin(elapsed*rate))* .065},
+			waist={running and -17 or -9,0,0},neck={running and 17 or 10,0,0},
+			hip={stride,0,7},knee={-8-math.max(0,-wave)*(running and 65 or 38),0,0},ankle={-stride*.3,0,0},
+			shoulder={10-stride*.65,0,side*20},elbow={running and 50 or 30,0,0},wrist={-5,0,0}}
+	end
+	local clip=clips[phase] or clips.airborne
+	local time=phase=="charging" and math.clamp(power or 0,0,1) or math.max(0,elapsed or 0)
+	if clip.Loop then time%=clip.Loop end
+	local frames=clip.Frames
+	local a,b=frames[1],frames[#frames]
+	for i=1,#frames-1 do if time<=frames[i+1][1] then a,b=frames[i],frames[i+1];break end end
+	local alpha=a==b and 0 or math.clamp((time-a[1])/math.max(.001,b[1]-a[1]),0,1)
+	alpha=alpha*alpha*(3-2*alpha)
+	local result={}
+	for _,role in ipairs({"root","waist","neck","hip","knee","ankle","shoulder","elbow","wrist"}) do
+		local from,to=a[2][role] or {0,0,0,0},b[2][role] or {0,0,0,0}
+		local value={}
+		for axis=1,4 do value[axis]=(from[axis] or 0)+((to[axis] or 0)-(from[axis] or 0))*alpha end
+		if role=="shoulder" or role=="hip" then value[3]*=side end
+		result[role]=value
+	end
+	return result
+end
+return M
+
+end)()
+local CatalogCtor=(function()
+-- Catalog item metadata checked against Roblox's bundle API on 2026-10-19.
+-- These are avatar catalog containers, NOT raw Animation asset IDs.
+local items={Idle=90553825422454,Walk=137699728035178,Run=133167141310794,
+	Leap=102511523957119,Fall=108019215607685}
+return function()
+	local cache,status,pending={}, {}, {}
+	local stopped=false
+	local M={Items=items,Name="Hulk Smash! Animation Pack",Creator="Gentle Blox",
+		Source="https://www.roblox.com/bundles/263899055278099/Hulk-Smash-Animation-Pack"}
+	function M.Get(label)
+		if stopped or not items[label] then return nil,"Original Rift Gamma keyframes" end
+		if cache[label] then return cache[label],status[label] end
+		if status[label] and not pending[label] then return nil,status[label] end
+		if not pending[label] then
+			pending[label]=true;status[label]="Resolving catalog item; original motion active"
+			task.spawn(function()
+				-- Inspect only an Animation object returned by Roblox. Never parent/import
+				-- scripts, require modules, or execute model contents.
+				local ok,objects=pcall(function() return game:GetObjects("rbxassetid://"..items[label]) end)
+				local resolved
+				if ok and type(objects)=="table" then
+					for _,object in ipairs(objects) do
+						pcall(function()
+							local animation=object:IsA("Animation") and object or object:FindFirstChildWhichIsA("Animation",true)
+							if animation then
+								local id=animation.AnimationId:match("%d+")
+								if id and tonumber(id)~=items[label] and tonumber(id)>0 then resolved="rbxassetid://"..id end
+							end
+						end)
+						pcall(function() object:Destroy() end)
+					end
+				end
+				if stopped then return end
+				pending[label]=nil
+				cache[label]=resolved
+				status[label]=resolved and "Playable Animation reference resolved; playback unverified" or "Catalog unavailable or no playable Animation; original motion active"
+			end)
+		end
+		return cache[label],status[label]
+	end
+	function M.IsPending(label) return pending[label]==true end
+	function M.Stop() stopped=true;table.clear(cache);table.clear(status);table.clear(pending) end
+	return M
+end
+
+end)()
+local PoseModule=(function()
 -- Local poses for Motor6D, AnimationConstraint and skinned Bone rigs.
 -- Only Transform is written; bind frames, attachments and movement controls are unchanged.
 local RunService = game:GetService("RunService")
-return function(character)
+return function(character, Motion)
 	local joints, connections = {}, {}
 	local phase, power, destroyed = nil, 0, false
+	local phaseSince, motionSpeed = os.clock(), 0
 	local M = { Count=0, Rig="Custom", AppliedCount=0, LastError=nil,
 		Inventory={Motor6D=0,AnimationConstraint=0,Bone=0}, ScanNotes={}, PendingBindings=0 }
 	local function read(object, key)
@@ -89,7 +211,9 @@ return function(character)
 			if #M.ScanNotes<12 then table.insert(M.ScanNotes,joint.Name.."["..kind.."] "..(not role and "role unknown" or "binding incomplete")) end
 			return
 		end
-		local entry={Joint=joint,Role=role,Kind=kind,Rest=rest}
+		local sideName=(tostring(joint.Name).." "..tostring(read(a0,"Name")).." "..tostring(read(part1,"Name"))):lower()
+		local side=sideName:find("left",1,true) and -1 or 1
+		local entry={Joint=joint,Role=role,Kind=kind,Rest=rest,Side=side}
 		table.insert(kind=="Bone" and bones or rigid,entry)
 	end
 	for _, joint in ipairs(character:GetDescendants()) do
@@ -140,8 +264,10 @@ return function(character)
 			end
 		end
 	end
-	function M.Set(nextPhase, amount)
+	function M.Set(nextPhase, amount, speed)
+		if phase~=nextPhase then phaseSince=os.clock() end
 		phase,power=nextPhase,math.clamp(amount or 0,0,1)
+		motionSpeed=speed or 0
 		if not phase then M.Restore();M.AppliedCount=0 end
 	end
 	local function apply()
@@ -164,12 +290,19 @@ return function(character)
 				local arm=entry.Role=="shoulder" or entry.Role=="elbow" or entry.Role=="wrist"
 				if armsOnly and not arm then return end
 				local down=(crouching or landing) and entry.Role=="root" and -(M.Rig=="R6" and .55 or .9)*alpha or 0
+				local x,y,z=math.rad(angles[entry.Role] or 0)*alpha,0,0
+				if Motion then
+					local sample=Motion.Sample(phase,os.clock()-phaseSince,power,entry.Side,motionSpeed)
+					local value=sample[entry.Role] or {}
+					x,y,z=math.rad(value[1] or 0),math.rad(value[2] or 0),math.rad(value[3] or 0)
+					down=entry.Role=="root" and (value[4] or 0)*(M.Rig=="R6" and .61 or 1) or 0
+				end
 				local rotation=entry.Rest().Rotation
-				local delta=rotation:Inverse()*CFrame.new(0,down,0)*CFrame.Angles(math.rad(angles[entry.Role] or 0)*alpha,0,0)*rotation
+				local delta=rotation:Inverse()*CFrame.new(0,down,0)*CFrame.Angles(x,y,z)*rotation
 				entry.Base=joint.Transform
 				-- Use a rest-relative arm pose while airborne. Adding it to the clip's
 				-- shoulder/elbow motion can bend arms behind the body or fold them twice.
-				entry.Applied=(not crouching and arm) and delta or delta*entry.Base
+				entry.Applied=(Motion or (not crouching and arm)) and delta or delta*entry.Base
 				joint.Transform=entry.Applied;M.AppliedCount+=1
 			end)
 			if not ok then M.LastError=entry.Joint.Name..": "..tostring(err) end
@@ -187,6 +320,7 @@ return function(character)
 end
 
 end)()
+local function PoseCtor(char) return PoseModule(char,HulkMotion) end
 local BrandCtor=(function()
 -- Exact user-supplied Rift logo. Normalized clipping stays centered after texture resizing.
 -- One asynchronous download per script; failed image loading leaves the text fallback usable.
@@ -240,7 +374,7 @@ local EffectsCtor=(function()
 -- Bounded local movement effects. No camera type/subject or world gravity changes.
 return function(Kit)
 	local M = { Enabled=true, LastError=nil }
-	local pieces, wind = {}, nil
+	local pieces = {}
 	local cameraOwner, cameraBase, cameraApplied
 	local offsetHum, offsetBase, offsetApplied
 	local pulse, shake, stopped = 0, 0, false
@@ -256,7 +390,6 @@ return function(Kit)
 		restoreCamera();restoreOffset()
 		for _,p in ipairs(pieces) do p.Part:Destroy() end
 		table.clear(pieces)
-		if wind then wind:Destroy();wind=nil end
 		pulse,shake=0,0
 	end
 	function M.SetEnabled(on)
@@ -328,13 +461,6 @@ return function(Kit)
 			offsetApplied=offsetBase+Vector3.new(math.sin(os.clock()*57)*shake,math.cos(os.clock()*43)*shake*.6,0)
 			hum.CameraOffset=offsetApplied
 		end
-		local volume=airborne and math.clamp((speed-45)/250,0,1)*.2 or 0
-		if volume>0 and root and (not wind or wind.Parent~=root) then
-			if wind then wind:Destroy() end
-			wind=Kit.create("Sound",{Name="RiftHulkWind",SoundId="rbxassetid://5813077875",Looped=true,Volume=0},root)
-			wind:Play()
-		end
-		if wind then wind.Volume=volume;wind.PlaybackSpeed=.85+math.clamp(speed/500,0,.45);if volume==0 then wind:Destroy();wind=nil end end
 	end
 	function M.Destroy() if stopped then return end;M.Clear();stopped=true end
 	return M
@@ -343,35 +469,34 @@ end
 end)()
 local LeapCtor=(function()
 -- Hulk traversal: charged leap, quick bound, air steering and downward smash.
-return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
+return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 	local Players = game:GetService("Players")
 	local RunService = game:GetService("RunService")
 	local UIS = game:GetService("UserInputService")
 	local player = Players.LocalPlayer
-	local animationIds = {
-		Idle = "rbxassetid://180435571", CS_Leap = "rbxassetid://74095507765093",
-		Walk = "rbxassetid://180426354", Fall = "rbxassetid://180436148",
-		CS_Downslam = "rbxassetid://113926956994381", KS_ChaseSlam = "rbxassetid://107995270438202",
-	}
+	local catalog=CatalogCtor and CatalogCtor()
+	local animationIds=catalog and catalog.Items or {}
 	local M = {
-		Enabled = false, Phase = "off", Power = 0, LastError = nil, AnimationMode = "Auto",
+		Enabled = false, Phase = "off", Power = 0, LastError = nil, AnimationMode = "Original",
 		AnimationIds = animationIds, EffectsEnabled = true, Bounds = 0, Slams = 0, Landings = 0, AirSteers = 0,
+		ResolvedIds={}, CatalogSource=catalog and catalog.Source,
 		AnimationStatus = { Crouch="Not requested", Leap="Not requested" },
 		AssetErrors = {}, ButtonPresses=0, Releases=0, Launches=0, LastInput="None", Motion={Status="No launch requested"},
 		Config = { ChargeSeconds = 2.2, MinUp = 55, MaxUp = 140, MinForward = 40, MaxForward = 125,
 			FullChargeUp = 180, FullChargeForward = 300,
-			CrouchAnimation = "rbxassetid://99086193071059", LeapAnimation = animationIds.CS_Leap,
+			CrouchAnimation = nil, LeapAnimation = nil,
 			CrouchPoseFraction = 0.5, BoundForward = 105, BoundUp = 85, SlamDown = 180,
-			AirAcceleration = 85, LandingSeconds = 0.22 },
+			AirAcceleration = 85, LandingSeconds = 0.38 },
 	}
 	local stopped, connections, tracks = false, {}, {}
-	local gui, dock, leapButton, fill, percent, caption, boundButton, slamButton
+	local gui, dock, leapButton, fill, percent, caption, boundButton, slamButton, roarButton
 	local activeInput, chargeStart, activeChar, activeRoot, activeHum, animator
 	local trackChar, crouch, jump, crouchAttempted, jumpAttempted
 	local pose, poseChar, assets, clipSlots = nil, nil, {}, {}
 	local lastPoseAttempt = -math.huge
 	local flightStart, seenAir, animationNote = 0, false, nil
 	local landingStart, launchSpeed, peakDown = 0, 0, 0
+	local roarStart = 0
 	local actionTracks, activeAction = {}, nil
 	local buttonMotion, boundAt, smashAt = {}, -math.huge, -math.huge
 	local effects = EffectsCtor and EffectsCtor(Kit)
@@ -414,6 +539,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		end
 		table.clear(tracks)
 		table.clear(actionTracks);activeAction=nil
+		table.clear(M.ResolvedIds)
 		for _, asset in ipairs(assets) do asset:Destroy() end
 		table.clear(assets); table.clear(clipSlots)
 		clearPose()
@@ -423,10 +549,10 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 	end
 	local function paint(text)
 		if not gui then return end
-		fill.Size = UDim2.fromScale(1, M.Power)
+		fill.Size = UDim2.fromScale(M.Power, 1)
 		percent.Text = tostring(math.floor(M.Power * 100)) .. "%"
 		leapButton.Text = M.Phase == "charging" and (M.Power >= 1 and "RELEASE\nLONG LEAP" or "CHARGING")
-			or M.Phase == "airborne" and "LEAPING" or M.Phase == "slamming" and "SMASHING" or M.Phase == "landing" and "IMPACT" or "HOLD\nLEAP"
+			or M.Phase == "airborne" and "LEAPING" or M.Phase == "slamming" and "SMASHING" or M.Phase == "landing" and "IMPACT" or "POWER\nLEAP"
 		leapButton.BackgroundColor3 = M.Phase == "charging" and Color3.fromRGB(55, 132, 73) or Color3.fromRGB(34, 71, 45)
 		if boundButton then boundButton.TextColor3=M.Phase=="ready" and Kit.INK or Kit.SUB end
 		if slamButton then slamButton.TextColor3=M.Phase=="airborne" and Color3.fromRGB(158,237,126) or Kit.SUB end
@@ -458,11 +584,15 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		return nil
 	end
 	local function loadTrack(char, hum, id, label)
+		if M.AnimationMode~="Auto" then M.AnimationStatus[label]="Original Rift Gamma keyframes";return nil end
+		if not id and catalog then id,M.AnimationStatus[label]=catalog.Get(label) end
+		if not id then M.AnimationStatus[label]=M.AnimationStatus[label] or "Original Rift Gamma keyframes";return nil end
 		if trackChar ~= char then
 			clearTracks(); trackChar = char
 			animator = hum:FindFirstChildOfClass("Animator")
 			if not animator then animator = Instance.new("Animator"); animator.Parent = hum end
 		end
+		M.ResolvedIds[label]=id
 		local animation = Instance.new("Animation")
 		animation.AnimationId = id
 		table.insert(assets, animation) -- retain the asset while Roblox loads its track
@@ -471,17 +601,17 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 			M.AnimationStatus[label] = "Load failed: " .. tostring(track)
 			return nil
 		end
-		track.Priority = Enum.AnimationPriority.Action4
+		track.Priority = (label=="Idle" or label=="Walk" or label=="Run") and Enum.AnimationPriority.Movement or Enum.AnimationPriority.Action4
 		track.Looped = false
 		table.insert(tracks, track)
-		clipSlots[track] = { Label=label, Started=os.clock(), Disabled=false }
+		clipSlots[track] = { Label=label, Started=os.clock(), Disabled=false, Warmed=label~="Crouch" and label~="Leap" }
 		M.AnimationStatus[label] = "Loading"
 		return track
 	end
 	local function compatible(track, char, hum)
 		local slot = clipSlots[track]
 		if not slot or slot.Disabled then return false end
-		if M.AnimationMode == "Built-in" then
+		if M.AnimationMode ~= "Auto" then
 			M.AnimationStatus[slot.Label] = "Built-in poses selected"
 			return false
 		end
@@ -533,7 +663,9 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		local track=actionTracks[label]
 		if track==nil then
 			track=loadTrack(char,hum,id,label)
-			actionTracks[label]=track or false
+			if track then actionTracks[label]=track
+			elseif catalog and catalog.IsPending(label) then actionTracks[label]=nil
+			else actionTracks[label]=false end
 			if track then track.Looped=looped==true end
 		end
 		return track
@@ -543,11 +675,27 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		if not char or not hum then return end
 		local charging = M.Phase == "charging"
 		local label,track="Leap",jump
-		if charging then label,track="Crouch",crouch
-		elseif M.Phase=="slamming" then label="Slam";track=chooseAction(char,hum,label,M.AnimationIds.CS_Downslam,false)
-		elseif M.Phase=="landing" then label="Land";track=chooseAction(char,hum,label,M.AnimationIds.KS_ChaseSlam,false)
+		local grounded=M.Phase=="ready"
+		local groundPhase="idle"
+		if grounded then
+			local reason=blocked(char,hum,root,true)
+			local tools=char:FindFirstChildOfClass("Tool")
+			if reason or tools or char:GetAttribute("busy")==true or char:GetAttribute("state")=="attacking" or char:GetAttribute("state")=="skill" then
+				for _,other in pairs(actionTracks) do stopTrack(other) end
+				activeAction=nil;if pose then pose.Set(nil) end;return
+			end
+			local moving=hum.MoveDirection and hum.MoveDirection.Magnitude>.1
+			groundPhase=moving and (root.AssemblyLinearVelocity.Magnitude>18 and "run" or "walk") or "idle"
+			label=groundPhase=="idle" and "Idle" or groundPhase=="run" and "Run" or "Walk"
+			track=chooseAction(char,hum,label,nil,true)
+		end
+		if grounded then -- ground clip/pose selected above
+		elseif charging then label,track="Crouch",crouch
+		elseif M.Phase=="roaring" then label,track="Roar",nil;M.AnimationStatus.Roar="Original Rift Gamma keyframes"
+		elseif M.Phase=="slamming" then label="Slam";track=chooseAction(char,hum,label,M.Config.SlamAnimation,false)
+		elseif M.Phase=="landing" then label="Land";track=chooseAction(char,hum,label,M.Config.LandAnimation,false)
 		elseif root and root.AssemblyLinearVelocity.Y < -12 and seenAir then
-			label="Fall";track=chooseAction(char,hum,label,M.AnimationIds.Fall,true)
+			label="Fall";track=chooseAction(char,hum,label,M.Config.FallAnimation,true)
 		end
 		if activeAction~=label then
 			for _,other in pairs(actionTracks) do if other~=track then stopTrack(other) end end
@@ -576,13 +724,13 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 				useClip = false
 			end
 		end
-		local posePhase=charging and "charging" or M.Phase=="slamming" and "slamming" or M.Phase=="landing" and "landing" or "airborne"
+		local posePhase=grounded and groundPhase or charging and "charging" or M.Phase=="roaring" and "roaring" or M.Phase=="slamming" and "slamming" or M.Phase=="landing" and "landing" or (root and root.AssemblyLinearVelocity.Y < -12 and seenAir) and "falling" or os.clock()-flightStart<.32 and "launching" or "airborne"
 		if pose then
 			if useClip then
-				if charging then pose.Set(nil) else pose.Set(posePhase.."-arms") end
+				if charging or grounded then pose.Set(nil) else pose.Set(posePhase.."-arms") end
 			else
 				if track and track.Length > 0 then stopTrack(track) end
-				pose.Set(posePhase, M.Power)
+				pose.Set(posePhase, M.Power,root and root.AssemblyLinearVelocity.Magnitude or 0)
 			end
 		end
 		M.LastPoseError = pose and pose.LastError or M.LastPoseError
@@ -593,11 +741,11 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		if not char or not hum or not root or hum.Health <= 0 then return end
 		if trackChar and trackChar~=char then clearTracks() end
 		if not crouchAttempted then
-			crouch=loadTrack(char,hum,M.Config.CrouchAnimation,"Crouch");crouchAttempted=true
+			crouch=loadTrack(char,hum,M.Config.CrouchAnimation,"Crouch");crouchAttempted=not(catalog and catalog.IsPending("Crouch"))
 			if crouch then pcall(function() crouch:Play(0,0,1) end) end
 		end
 		if not jumpAttempted then
-			jump=loadTrack(char,hum,M.Config.LeapAnimation,"Leap");jumpAttempted=true
+			jump=loadTrack(char,hum,M.Config.LeapAnimation,"Leap");jumpAttempted=not(catalog and catalog.IsPending("Leap"))
 			if jump then pcall(function() jump:Play(0,0,1) end) end
 		end
 		pcall(ensurePose, char) -- so the joint count is already known before the first charge, not just reported as 0
@@ -637,7 +785,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		if trackChar ~= char then clearTracks() end
 		if not crouchAttempted then
 			crouch = loadTrack(char, hum, M.Config.CrouchAnimation, "Crouch")
-			crouchAttempted = true
+			crouchAttempted = not(catalog and catalog.IsPending("Crouch"))
 		end
 		activeInput, chargeStart = input, os.clock()
 		activeChar, activeHum, activeRoot = char, hum, root
@@ -708,6 +856,16 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		if stopped or not M.Enabled or M.Phase~="ready" then return false end
 		return launch(.35,true)
 	end
+	function M.Roar()
+		if stopped or not M.Enabled or M.Phase~="ready" then return false end
+		local char,hum,root=body()
+		local reason=blocked(char,hum,root,true)
+		if reason then M.LastError=reason;paint(reason);return false end
+		activeChar,activeHum,activeRoot=char,hum,root
+		M.Phase="roaring";roarStart=os.clock();activeAction=nil
+		updateAnimation();paint("GAMMA ROAR · move to cancel")
+		return true
+	end
 	function M.Slam()
 		if stopped or not M.Enabled or M.Phase~="airborne" then return false end
 		local char,hum,root=body()
@@ -752,7 +910,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		local viewport = workspace.CurrentCamera.ViewportSize
 		local x = dock.Position.X.Scale * viewport.X + dock.Position.X.Offset
 		local y = dock.Position.Y.Scale * viewport.Y + dock.Position.Y.Offset
-		local width, height = 216, 246
+		local width, height = 216, 264
 		dock.Position = UDim2.fromOffset(math.clamp(x, math.min(width + 8, viewport.X - 8), math.max(width + 8, viewport.X - 8)),
 			math.clamp(y, math.min(height + 8, viewport.Y - 45), math.max(height + 8, viewport.Y - 45)))
 	end
@@ -764,7 +922,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		local ok = pcall(function() gui.Parent = parent end)
 		if not ok then gui.Parent = player:WaitForChild("PlayerGui") end
 		dock = Kit.create("Frame", { Name = "HulkLeapDock", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -22, 1, -100),
-			Size = UDim2.fromOffset(216, 246), BackgroundColor3 = Color3.fromRGB(15, 23, 18), BorderSizePixel = 0 }, gui)
+			Size = UDim2.fromOffset(216, 264), BackgroundColor3 = Color3.fromRGB(15, 23, 18), BorderSizePixel = 0 }, gui)
 		Kit.create("UICorner", { CornerRadius = UDim.new(0, 12) }, dock)
 		Kit.create("UIStroke", { Color = Color3.fromRGB(64, 115, 76), Transparency = 0.2, Thickness = 1 }, dock)
 		local grip = Kit.create("Frame", { Size = UDim2.new(1, -36, 0, 30), BackgroundTransparency = 1, Active = true }, dock)
@@ -775,21 +933,21 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		end
 		Kit.create("TextLabel", { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = "HULK / RAGE · 2.0", TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = "RIFT / GAMMA · 3.0", TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = "×", TextSize = 20, TextColor3 = Kit.SUB }, dock)
-		leapButton = Kit.create("TextButton", { Name = "HoldLeap", Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(132, 82),
+		leapButton = Kit.create("TextButton", { Name = "HoldLeap", Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(132, 90),
 			BackgroundColor3 = Color3.fromRGB(34, 71, 45), BorderSizePixel = 0, AutoButtonColor = false, Active = true,
 			Text = "HOLD\nLEAP", TextSize = 18, FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextColor3 = Kit.INK }, dock)
 		Kit.create("UICorner", { CornerRadius = UDim.new(0, 10) }, leapButton)
-		local bar = Kit.create("Frame", { Name = "PowerBar", Position = UDim2.fromOffset(154, 36), Size = UDim2.fromOffset(16, 82),
+		local bar = Kit.create("Frame", { Name = "PowerBar", Position = UDim2.fromOffset(12, 136), Size = UDim2.fromOffset(192, 8),
 			BackgroundColor3 = Color3.fromRGB(29, 42, 33), BorderSizePixel = 0, ClipsDescendants = true }, dock)
 		Kit.create("UICorner", { CornerRadius = UDim.new(0, 5) }, bar)
 		fill = Kit.create("Frame", { Name = "PowerFill", AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0),
 			BackgroundColor3 = Color3.fromRGB(99, 217, 124), BorderSizePixel = 0 }, bar)
-		percent = Kit.create("TextLabel", { Name = "ChargePercent", Position = UDim2.fromOffset(175, 61), Size = UDim2.fromOffset(32, 26), BackgroundTransparency = 1,
+		percent = Kit.create("TextLabel", { Name = "ChargePercent", Position = UDim2.fromOffset(170, 149), Size = UDim2.fromOffset(32, 26), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextSize = 10, TextColor3 = Kit.INK, Text = "0%" }, dock)
-		caption = Kit.create("TextLabel", { Position = UDim2.fromOffset(10, 163), Size = UDim2.new(1, -20, 0, 23), BackgroundTransparency = 1,
+		caption = Kit.create("TextLabel", { Position = UDim2.fromOffset(12, 149), Size = UDim2.fromOffset(154, 26), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans"), TextSize = 10, TextColor3 = Kit.SUB, TextWrapped = true, Text = "Hold to charge · release to leap" }, dock)
 
 		local function actionButton(name,text,x)
@@ -799,8 +957,12 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 			Kit.create("UICorner",{CornerRadius=UDim.new(0,8)},button)
 			return button
 		end
-		boundButton=actionButton("QuickBound","BOUND",12)
-		slamButton=actionButton("DownSlam","SMASH",112)
+		boundButton=actionButton("QuickBound","BOUND",150)
+		boundButton.Position=UDim2.fromOffset(150,36);boundButton.Size=UDim2.fromOffset(54,40)
+		slamButton=actionButton("DownSlam","METEOR",150)
+		slamButton.Position=UDim2.fromOffset(150,82);slamButton.Size=UDim2.fromOffset(54,44);slamButton.TextSize=10
+		roarButton=actionButton("GammaRoar","GAMMA ROAR",12)
+		roarButton.Position=UDim2.fromOffset(12,180);roarButton.Size=UDim2.fromOffset(192,28)
 		local function animateButton(button,pressed)
 			local scale=Kit.create("UIScale",{Scale=1},button)
 			local motion={Scale=scale,Pressed=pressed,Hover=false}
@@ -811,19 +973,22 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		animateButton(leapButton,function() return M.Phase=="charging" end)
 		animateButton(boundButton,function() return os.clock()-boundAt<.14 end)
 		animateButton(slamButton,function() return os.clock()-smashAt<.14 end)
+		animateButton(roarButton,function() return M.Phase=="roaring" end)
 		connect(boundButton.Activated,M.Bound,"Quick bound")
 		connect(slamButton.Activated,M.Slam,"Downward smash")
-		local fxButton=Kit.create("TextButton",{Name="EffectsToggle",Position=UDim2.fromOffset(112,192),Size=UDim2.fromOffset(92,20),
+		connect(roarButton.Activated,M.Roar,"Gamma roar")
+		local fxButton=Kit.create("TextButton",{Name="EffectsToggle",Position=UDim2.fromOffset(112,215),Size=UDim2.fromOffset(92,20),
 			BackgroundTransparency=1,Text="Effects: On",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
 		connect(fxButton.Activated,function()
 			M.EffectsEnabled=not M.EffectsEnabled
 			fx("SetEnabled",M.EffectsEnabled);fxButton.Text=M.EffectsEnabled and "Effects: On" or "Effects: Off"
 		end)
-		local modeButton=Kit.create("TextButton",{Name="AnimationMode",Position=UDim2.fromOffset(10,192),Size=UDim2.new(.5,-12,0,20),BackgroundTransparency=1,Text="Pose: Auto",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
-		local reportButton=Kit.create("TextButton",{Name="CopyAnimationReport",Position=UDim2.fromOffset(10,218),Size=UDim2.new(1,-20,0,18),BackgroundTransparency=1,Text="Copy animation report",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
+		local modeButton=Kit.create("TextButton",{Name="AnimationMode",Position=UDim2.fromOffset(10,215),Size=UDim2.new(.5,-12,0,20),BackgroundTransparency=1,Text="Motion: Original",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
+		local reportButton=Kit.create("TextButton",{Name="CopyAnimationReport",Position=UDim2.fromOffset(10,241),Size=UDim2.new(1,-20,0,18),BackgroundTransparency=1,Text="Copy animation report",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
 		connect(modeButton.Activated,function()
-			M.AnimationMode=M.AnimationMode=="Auto" and "Built-in" or "Auto"
-			modeButton.Text="Pose: " .. M.AnimationMode
+			M.AnimationMode=M.AnimationMode=="Auto" and "Original" or "Auto"
+			clearTracks();prepareAnimations()
+			modeButton.Text=M.AnimationMode=="Auto" and "Motion: Catalog" or "Motion: Original"
 			if M.Phase~="ready" and M.Phase~="off" then updateAnimation();paint(animationNote) end
 		end)
 		connect(reportButton.Activated,function()
@@ -874,7 +1039,8 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		if processed or not M.Enabled or (UIS.GetFocusedTextBox and UIS:GetFocusedTextBox()) then return end
 		if input.KeyCode==Enum.KeyCode.Z then begin(input)
 		elseif input.KeyCode==Enum.KeyCode.X then M.Bound()
-		elseif input.KeyCode==Enum.KeyCode.C then M.Slam() end
+		elseif input.KeyCode==Enum.KeyCode.C then M.Slam()
+		elseif input.KeyCode==Enum.KeyCode.R then M.Roar() end
 	end,"Keyboard control") end
 	connect(UIS.InputEnded, function(input)
 		if activeInput and (input == activeInput or (input.UserInputType == Enum.UserInputType.MouseButton1 and activeInput.UserInputType == Enum.UserInputType.MouseButton1)) then
@@ -900,7 +1066,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 			if type(message)~="string" or message:find("Rift Hub / Hulk",1,true) then return end
 			local lower=message:lower()
 			if not (lower:find("fail",1,true) or lower:find("error",1,true) or lower:find("permission",1,true) or lower:find("not authorized",1,true)) then return end
-			for label,asset in pairs({Crouch=M.Config.CrouchAnimation,Leap=M.Config.LeapAnimation,Fall=M.AnimationIds.Fall,Slam=M.AnimationIds.CS_Downslam,Land=M.AnimationIds.KS_ChaseSlam}) do
+			for label,asset in pairs(M.ResolvedIds) do
 				local id = asset:match("%d+")
 				if id and message:find(id,1,true) then M.AssetErrors[label]=message:gsub("[%c]"," "):sub(1,500) end
 			end
@@ -922,6 +1088,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		if M.Phase == "ready" then
 			prepareAnimations()
 			finishWarmup()
+			if M.AnimationMode=="Original" or catalog then updateAnimation() end
 		elseif M.Phase == "charging" then
 			local reason = blocked(char, hum, root, true)
 			if char ~= activeChar or hum ~= activeHum or root ~= activeRoot then reason = "Character changed; charge cancelled" end
@@ -943,6 +1110,10 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 				land(char,hum,root)
 			elseif hum.FloorMaterial~=Enum.Material.Air and elapsed>.5 and not seenAir then cancel("Launch stopped on the ground")
 			elseif elapsed>12 then cancel("Leap ended") end
+		elseif M.Phase=="roaring" then
+			if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,true) then cancel();return end
+			if hum.MoveDirection.Magnitude>.1 or os.clock()-roarStart>=1.35 then cancel(nil,true)
+			else updateAnimation() end
 		elseif M.Phase=="landing" then
 			if char~=activeChar or hum~=activeHum or root~=activeRoot or not hum or hum.Health<=0 then cancel();return end
 			local reason=blocked(char,hum,root,false)
@@ -958,7 +1129,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 		local function safeText(get)
 			local ok,value=pcall(get);return ok and tostring(value) or "unavailable"
 		end
-		return table.concat({"Rift Hub / Hulk / 2.0", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
+		return table.concat({"Rift Hub / Hulk / 3.0", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
 			"Rig: " .. (hum and tostring(hum.RigType) or "none"),
 			"Moves: bounds="..M.Bounds.." | smashes="..M.Slams.." | landings="..M.Landings.." | steering steps="..M.AirSteers,
 			"Effects: "..tostring(M.EffectsEnabled).." | last effect error="..tostring(M.LastEffectError),
@@ -969,8 +1140,8 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 				.. " | anchored=" .. safeText(function() return root.Anchored end) .. " | PlatformStand=" .. safeText(function() return hum.PlatformStand end),
 			"Locks: canRun=" .. safeText(function() return char:GetAttribute("canRun") end) .. " | LOCKED_INPUTS=" .. safeText(function() return char:GetAttribute("LOCKED_INPUTS") end)
 				.. " | cutsceneLock=" .. safeText(function() return char:GetAttribute("cutsceneLock") end),
-			"Crouch " .. M.Config.CrouchAnimation .. ": " .. M.AnimationStatus.Crouch,
-			"Leap " .. M.Config.LeapAnimation .. ": " .. M.AnimationStatus.Leap,
+			"Crouch source: " .. tostring(M.ResolvedIds.Crouch or "Original Rift Gamma") .. " | " .. M.AnimationStatus.Crouch,
+			"Leap source: " .. tostring(M.ResolvedIds.Leap or "Original Rift Gamma") .. " | " .. M.AnimationStatus.Leap,
 			"Crouch playback: playing=" .. safeText(function() return crouch.IsPlaying end) .. " | length=" .. safeText(function() return crouch.Length end)
 				.. " | weight=" .. safeText(function() return crouch.WeightCurrent end) .. " | time=" .. safeText(function() return crouch.TimePosition end),
 			"Leap playback: playing=" .. safeText(function() return jump.IsPlaying end) .. " | length=" .. safeText(function() return jump.Length end)
@@ -988,7 +1159,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor)
 	function M.Panic() M.SetEnabled(false); clearTracks() end
 	function M.Stop()
 		if stopped then return end
-		M.Panic();fx("Destroy"); stopped = true
+		M.Panic();fx("Destroy");if catalog then catalog.Stop() end; stopped = true
 		for _, connection in ipairs(connections) do connection:Disconnect() end
 		table.clear(connections)
 		if gui then gui:Destroy(); gui = nil end
@@ -999,9 +1170,9 @@ end
 
 end)()
 local brand=BrandCtor("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/assets/rift_logo.jpg")
-local api=LeapCtor(Utils,Kit,PoseCtor,brand,EffectsCtor)
+local api=LeapCtor(Utils,Kit,PoseCtor,brand,EffectsCtor,CatalogCtor)
 api.Game="Hulk"
-api.Version="2.0"
+api.Version="3.0"
 local stop=api.Stop
 function api.Unload()
  stop()

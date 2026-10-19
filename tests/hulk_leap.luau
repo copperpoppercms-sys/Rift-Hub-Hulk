@@ -115,8 +115,26 @@ end)()
 local createEffects=(function()
 -- EFFECTS
 end)()
-local create=(function()
+local createRaw=(function()
 -- HULK LEAP
+end)()
+-- Clip-path fixtures use explicit test assets; the published default is Original with no clip IDs.
+local function create(...)
+ local m=createRaw(...)
+ m.AnimationMode="Auto"
+ m.Config.CrouchAnimation="rbxassetid://90000000000001"
+ m.Config.LeapAnimation="rbxassetid://90000000000002"
+ m.Config.FallAnimation="rbxassetid://90000000000003"
+ m.Config.SlamAnimation="rbxassetid://90000000000004"
+ m.Config.LandAnimation="rbxassetid://90000000000005"
+ return m
+end
+local motion=(function()
+-- MOTION
+end)()
+local task={spawn=function(fn) fn() end}
+local catalogCtor=(function()
+-- CATALOG
 end)()
 local function step(dt) clock+=dt;run.PreAnimation:Fire();run.PreSimulation:Fire();run.Heartbeat:Fire(dt) end
 local function widget(name)
@@ -129,7 +147,7 @@ local function land(m)
 	player.Character.hum.FloorMaterial=Enum.Material.Air;step(.2)
 	player.Character.hum.FloorMaterial=Enum.Material.Concrete;step(.4)
 	check(m.Phase=="landing","touchdown did not enter the Hulk landing pose")
-	step(.23)
+	step(.39)
 	check(m.Phase=="ready","landing did not reset the charge")
 end
 local m=create(Utils,Kit,createPose)
@@ -140,7 +158,7 @@ local a,b=touch(),touch()
 button.InputBegan:Fire(a);step(1.1)
 near(m.Power,.5);check(m.Phase=="charging","hold did not charge")
 local squat=animationTracks[1]
-check(squat.Id=="rbxassetid://99086193071059" and squat.IsPlaying,"wrong squat animation")
+check(squat.Id=="rbxassetid://90000000000001" and squat.IsPlaying,"wrong squat animation")
 near(squat.TimePosition,.5);near(squat.Speed,0);near(squat.WeightCurrent,1)
 UIS.InputEnded:Fire(b)
 check(m.Phase=="charging" and player.Character.root.impulses==0,"other finger released the charge")
@@ -151,7 +169,7 @@ check(m.SetEnabled(true) and m.Phase=="charging","opening existing controls rese
 UIS.InputEnded:Fire(a)
 check(m.Phase=="airborne" and player.Character.root.impulses==1,"release did not launch exactly once")
 near(player.Character.root.AssemblyLinearVelocity.Y,180);near(player.Character.root.AssemblyLinearVelocity.Z,-300)
-check(not squat.IsPlaying and animationTracks[2].Id=="rbxassetid://74095507765093","launch animation missing")
+check(not squat.IsPlaying and animationTracks[2].Id=="rbxassetid://90000000000002","launch animation missing")
 UIS.InputEnded:Fire(a);button.InputBegan:Fire(b)
 check(player.Character.root.impulses==1 and m.Phase=="airborne","repeated release or midair input launched twice")
 land(m)
@@ -180,12 +198,10 @@ for _,power in ipairs({0.8,0.9,0.999,1,2}) do
  previousForward,previousUp=velocity.X,velocity.Y
  land(m)
 end
-check(m.AnimationIds.Idle=="rbxassetid://180435571" and m.AnimationIds.CS_Leap==m.Config.LeapAnimation
- and m.AnimationIds.Walk=="rbxassetid://180426354" and m.AnimationIds.Fall=="rbxassetid://180436148"
- and m.AnimationIds.CS_Downslam=="rbxassetid://113926956994381" and m.AnimationIds.KS_ChaseSlam=="rbxassetid://107995270438202","supplied animation references lost")
-logs.MessageOut:Fire("Failed to load animation rbxassetid://74095507765093")
-check(m.AssetErrors.Leap and m.AssetErrors.Leap:find("74095507765093",1,true),"new leap asset error was not captured")
-check(m.Diagnostics():find("Leap rbxassetid://74095507765093:",1,true),"report showed old leap ID")
+check(m.Config.CrouchAnimation=="rbxassetid://90000000000001" and m.Config.LeapAnimation=="rbxassetid://90000000000002","test clip configuration lost")
+logs.MessageOut:Fire("Failed to load animation rbxassetid://90000000000002")
+check(m.AssetErrors.Leap and m.AssetErrors.Leap:find("90000000000002",1,true),"new leap asset error was not captured")
+check(m.Diagnostics():find("Leap source: rbxassetid://90000000000002",1,true),"report showed old leap ID")
 local count=player.Character.root.impulses
 button.InputBegan:Fire(a);step(.3);UIS.WindowFocusReleased:Fire();UIS.InputEnded:Fire(a)
 check(m.Phase=="ready" and player.Character.root.impulses==count,"focus loss launched instead of cancelling")
@@ -269,7 +285,7 @@ mismatch.Stop()
 player.Character=character(Enum.HumanoidRigType.R6);animationLength=2;targetNames={"Torso","Left Arm"}
 local r6=create(Utils,Kit,createPose);r6.SetEnabled(true)
 widget("AnimationMode").Activated:Fire()
-check(r6.AnimationMode=="Built-in","pose toggle failed")
+check(r6.AnimationMode=="Original","pose toggle failed")
 widget("HoldLeap").InputBegan:Fire(touch());step(1);step(0)
 check(player.Character.joints[1].Transform.Y<0,"R6 fallback did not crouch")
 local external=CFrame.new(0,4,0);player.Character.joints[1].Transform=external
@@ -283,9 +299,9 @@ local warming=create(Utils,Kit,createPose);warming.SetEnabled(true)
 local warmCrouch=animationTracks[#animationTracks-1]
 step(.1)
 check(warmCrouch.IsPlaying and (warmCrouch.StopCalls or 0)==0,"warmup stopped before clip data could load")
-logs.MessageOut:Fire("Failed to load animation rbxassetid://99086193071059: asset permission denied")
+logs.MessageOut:Fire("Failed to load animation rbxassetid://90000000000001: asset permission denied")
 check(warming.AssetErrors.Crouch and warming.AssetErrors.Crouch:find("permission denied",1,true),"Roblox asset error not captured")
-logs.MessageOut:Fire("Rift Hub / Hulk / 1.2\nRoblox crouch error: 99086193071059")
+logs.MessageOut:Fire("Rift Hub / Hulk / 1.2\nRoblox crouch error: 90000000000001")
 check(warming.AssetErrors.Crouch:find("permission denied",1,true),"copying the report overwrote asset evidence")
 widget("HoldLeap").InputBegan:Fire(touch());step(.5)
 check(warming.AnimationStatus.Crouch:find("permission denied",1,true),"reported asset failure was hidden")
@@ -481,12 +497,12 @@ local coast=player.Character.root.AssemblyLinearVelocity
 step(.1)
 check(player.Character.root.AssemblyLinearVelocity==coast,"no-input flight did not preserve momentum")
 player.Character.root.AssemblyLinearVelocity=Vector3.new(coast.X,-20,coast.Z);step(.1)
-check(animationTracks[#animationTracks].Id=="rbxassetid://180436148" and animationTracks[#animationTracks].IsPlaying,"fall animation was not selected")
+check(animationTracks[#animationTracks].Id=="rbxassetid://90000000000003" and animationTracks[#animationTracks].IsPlaying,"fall animation was not selected")
 local beforeSmash=player.Character.root.impulses
 widget("DownSlam").Activated:Fire()
 check(traversal.Phase=="slamming" and traversal.Slams==1,"smash button did not dive")
 near(player.Character.root.AssemblyLinearVelocity.Y,-180)
-check(animationTracks[#animationTracks].Id=="rbxassetid://113926956994381","smash clip was not selected")
+check(animationTracks[#animationTracks].Id=="rbxassetid://90000000000004","smash clip was not selected")
 check(not traversal.Slam() and player.Character.root.impulses==beforeSmash+1,"smash stacked repeatedly")
 player.Character.hum.MoveDirection=Vector3.new(-1,0,0)
 local diving=player.Character.root.AssemblyLinearVelocity
@@ -494,9 +510,9 @@ step(.05)
 check(player.Character.root.AssemblyLinearVelocity==diving,"steering overrode the downward smash")
 player.Character.hum.FloorMaterial=Enum.Material.Concrete;step(.1)
 check(traversal.Phase=="landing" and traversal.Landings==1,"smash did not land once")
-check(animationTracks[#animationTracks].Id=="rbxassetid://107995270438202","landing clip was not selected")
+check(animationTracks[#animationTracks].Id=="rbxassetid://90000000000005","landing clip was not selected")
 check(not traversal.Bound(),"bound interrupted touchdown recovery")
-step(.23)
+step(.39)
 check(traversal.Phase=="ready" and traversal.Landings==1,"touchdown did not recover")
 check(player.Character.hum.WalkSpeed==24 and workspace.Gravity==196.2,"traversal changed normal movement or gravity")
 check(not traversal.LastRuntimeError and not traversal.LastEffectError,"traversal/effects raised an error")
@@ -540,9 +556,9 @@ local cameraOffset=player.Character.hum.CameraOffset
 player.Character.root.AssemblyLinearVelocity=Vector3.new(250,40,0)
 effects.Update("airborne",player.Character,player.Character.hum,player.Character.root,1,.1)
 check(workspace.CurrentCamera.FieldOfView>76 and workspace.CurrentCamera.FieldOfView<=110,"speed FOV did not respond within bounds")
-check(widget("RiftHulkWind").IsPlaying,"airborne wind did not play")
+
 check(player.Character.hum.CameraOffset~=cameraOffset,"impact camera response was missing")
-local windObject=widget("RiftHulkWind")
+
 local oldCamera=workspace.CurrentCamera
 workspace.CurrentCamera={FieldOfView=82,ViewportSize=oldCamera.ViewportSize}
 effects.Update("airborne",player.Character,player.Character.hum,player.Character.root,1,.1)
@@ -557,12 +573,99 @@ workspace.CurrentCamera.FieldOfView=91
 local externalOffset=Vector3.new(2,0,0);player.Character.hum.CameraOffset=externalOffset
 effects.SetEnabled(false)
 check(workspace.CurrentCamera.FieldOfView==91 and player.Character.hum.CameraOffset==externalOffset,"effect cleanup overwrote external camera changes")
-check(liveFX()==0 and windObject.Destroyed,"disabled effects leaked objects")
+check(liveFX()==0,"disabled effects leaked objects")
 effects.Destroy();effects.Destroy();rayHit=nil
+-- Original authored motion has breathing, asymmetric strides and continuous charge/takeoff.
+local breatheA=motion.Sample("idle",0,0,1)
+local breatheB=motion.Sample("idle",1.2,0,1)
+check(breatheA.waist[1]~=breatheB.waist[1] and breatheA.root[4]~=breatheB.root[4],"original idle did not breathe")
+local left=motion.Sample("run",.15,0,-1)
+local right=motion.Sample("run",.15,0,1)
+near(left.hip[1],-right.hip[1]);near(left.shoulder[3],-right.shoulder[3])
+local middle=motion.Sample("charging",0,.55,1)
+local full=motion.Sample("charging",0,1,1)
+check(full.root[4]<middle.root[4] and full.knee[1]<middle.knee[1],"original charge did not deepen")
+local takeoff=motion.Sample("launching",.12,1,1)
+check(takeoff.hip[1]<0 and takeoff.shoulder[1]>80,"takeoff did not extend into a leap")
+check(motion.Sample("roaring",.6,0,1).shoulder[3]>30,"roar did not spread the arms")
+local compress=motion.Sample("landing",.09,1,1)
+local recover=motion.Sample("landing",.38,1,1)
+check(compress.root[4]<recover.root[4] and compress.knee[1]<recover.knee[1],"landing did not compress and recover")
+-- Test the actual published Original configuration, with no test clip overrides.
+player.Character=character();workspace.CurrentCamera.CFrame=nil
+local original=function(c) return createPose(c,motion) end
+local originalControl=createRaw(Utils,Kit,original,nil,createEffects,catalogCtor)
+local originalClipCount=#animationTracks
+check(originalControl.AnimationMode=="Original" and not originalControl.Config.LeapAnimation,"default still requested a reused animation")
+originalControl.SetEnabled(true);step(.1);step(0)
+check(player.Character.joints[1].Transform.Y<0 and #animationTracks==originalClipCount,"original stance required an animation asset")
+check(originalControl.Roar() and originalControl.Phase=="roaring","Gamma Roar did not start")
+step(.35);step(0)
+check(player.Character.joints[7].Transform.Angle>0,"roar did not pose shoulders")
+player.Character.hum.MoveDirection=Vector3.new(1,0,0);step(.05)
+check(originalControl.Phase=="ready","moving did not cancel the roar")
+player.Character.hum.MoveDirection=Vector3.zero
+local originalTouch=touch();widget("HoldLeap").InputBegan:Fire(originalTouch);step(2.3);step(0)
+near(player.Character.joints[1].Transform.Y,-.9)
+UIS.InputEnded:Fire(originalTouch)
+check(originalControl.Phase=="airborne" and #animationTracks==originalClipCount,"original leap required a reused clip")
+player.Character.hum.FloorMaterial=Enum.Material.Air;step(.4);step(0)
+near(player.Character.joints[7].Transform.Angle,math.rad(105))
+check(originalControl.Slam(),"original meteor did not launch")
+step(.2);step(0)
+near(player.Character.joints[7].Transform.Angle,math.rad(150))
+land(originalControl)
+check(not originalControl.LastRuntimeError and not originalControl.LastEffectError,"original movement raised an error")
+originalControl.Stop()
+check(run.PreAnimation:Count()==0 and run.PreSimulation:Count()==0,"original motion callbacks leaked")
+-- Resolve catalog containers asynchronously, never feed their wrapper IDs to LoadAnimation.
+local pendingTasks={}
+local oldSpawn=task.spawn
+task.spawn=function(fn) table.insert(pendingTasks,fn) end
+local getObjectsCalls=0
+local returnedObjects={}
+function game:GetObjects(url)
+ getObjectsCalls+=1
+ if url:find("90553825422454",1,true) then error("catalog access denied") end
+ local animation=object("Animation",{AnimationId="rbxassetid://90000000000022"})
+ if url:find("133167141310794",1,true) then animation.AnimationId="rbxassetid://133167141310794" end
+ local container=object("Model",{},nil)
+ function container:FindFirstChildWhichIsA(kind) return kind=="Animation" and animation or nil end
+ table.insert(container.children,animation);table.insert(returnedObjects,container)
+ return {container}
+end
+local cat=catalogCtor()
+check(cat.Items.Leap==102511523957119 and cat.Items.Fall==108019215607685,"researched Hulk catalog IDs lost")
+local pendingId=cat.Get("Leap")
+check(not pendingId and cat.IsPending("Leap") and getObjectsCalls==0,"catalog lookup blocked the caller")
+cat.Get("Leap");check(#pendingTasks==1,"catalog request duplicated while pending")
+table.remove(pendingTasks,1)()
+local actualId=cat.Get("Leap")
+check(actualId=="rbxassetid://90000000000022" and not cat.IsPending("Leap"),"catalog did not resolve the contained animation")
+check(returnedObjects[1].Destroyed and returnedObjects[1].children[1].Destroyed,"catalog resolution leaked imported contents")
+cat.Get("Idle");table.remove(pendingTasks,1)()
+local deniedId,deniedStatus=cat.Get("Idle")
+check(not deniedId and deniedStatus:find("unavailable",1,true),"denied catalog did not fall back")
+local oldCalls=getObjectsCalls;cat.Get("Idle");check(getObjectsCalls==oldCalls and #pendingTasks==0,"denied catalog retried repeatedly")
+cat.Get("Run");table.remove(pendingTasks,1)()
+check(not cat.Get("Run"),"catalog wrapper was mistaken for a raw animation")
+cat.Get("Walk");cat.Stop();table.remove(pendingTasks,1)()
+check(not cat.Get("Walk"),"a lookup completed after unload")
+task.spawn=oldSpawn
+-- Optional Catalog mode can use a resolved clip, and return to Original cleanly.
+player.Character=character();animationLength=2;targetNames={"UpperTorso"}
+local hybrid=createRaw(Utils,Kit,original,nil,nil,catalogCtor);hybrid.SetEnabled(true)
+widget("AnimationMode").Activated:Fire();step(.05)
+check(hybrid.AnimationMode=="Auto","catalog toggle failed")
+check(hybrid.Bound(),"catalog leap could not launch")
+check(animationTracks[#animationTracks].Id=="rbxassetid://90000000000022","catalog container ID reached LoadAnimation")
+widget("AnimationMode").Activated:Fire()
+check(hybrid.AnimationMode=="Original" and next(hybrid.ResolvedIds)==nil,"Original mode retained catalog state")
+hybrid.Stop()
+game.GetObjects=nil
 -- Execute the generated standalone, including its own minimal UI kit and logo fallback.
 local standaloneEnv={}
 local getgenv=function() return standaloneEnv end
-local task={spawn=function(fn) fn() end}
 local Font={fromName=function() return "font" end,fromEnum=function() return "font" end}
 Color3.new=function(...) return {...} end
 local standalone=(function()

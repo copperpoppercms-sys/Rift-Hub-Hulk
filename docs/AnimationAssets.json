@@ -1,0 +1,56 @@
+{
+  "checkedAt": "2026-10-19",
+  "bundleId": 263899055278099,
+  "bundleName": "Hulk Smash! Animation Pack",
+  "creator": "Gentle Blox",
+  "source": "https://www.roblox.com/bundles/263899055278099/Hulk-Smash-Animation-Pack",
+  "bundleApi": "https://catalog.roblox.com/v1/assets/90553825422454/bundles?limit=10",
+  "assets": [
+    {
+      "catalogId": 90553825422454,
+      "name": "Hulk Smash! Animation Pack - 기본 애니메이션",
+      "assetType": 51,
+      "creator": "Gentle Blox",
+      "metadataSource": "https://economy.roblox.com/v2/assets/90553825422454/details",
+      "playbackVerified": false
+    },
+    {
+      "catalogId": 137699728035178,
+      "name": "Hulk Smash! Animation Pack - 걷기 애니메이션",
+      "assetType": 55,
+      "creator": "Gentle Blox",
+      "metadataSource": "https://economy.roblox.com/v2/assets/137699728035178/details",
+      "playbackVerified": false
+    },
+    {
+      "catalogId": 133167141310794,
+      "name": "Hulk Smash! Animation Pack - 달리기 애니메이션",
+      "assetType": 53,
+      "creator": "Gentle Blox",
+      "metadataSource": "https://economy.roblox.com/v2/assets/133167141310794/details",
+      "playbackVerified": false
+    },
+    {
+      "catalogId": 102511523957119,
+      "name": "Hulk Smash! Animation Pack - 점프 애니메이션",
+      "assetType": 52,
+      "creator": "Gentle Blox",
+      "metadataSource": "https://economy.roblox.com/v2/assets/102511523957119/details",
+      "playbackVerified": false
+    },
+    {
+      "catalogId": 108019215607685,
+      "name": "Hulk Smash! Animation Pack - 낙하 애니메이션",
+      "assetType": 50,
+      "creator": "Gentle Blox",
+      "metadataSource": "https://economy.roblox.com/v2/assets/108019215607685/details",
+      "playbackVerified": false
+    }
+  ],
+  "notes": [
+    "Catalog item types 50/51/52/53/55 are containers, not raw Animation type 24.",
+    "The optional resolver accepts only an Animation.AnimationId returned by Roblox; it never loads the container ID as a raw clip.",
+    "Catalog availability, rig compatibility and playback must be tested inside the destination experience.",
+    "Original Rift Gamma keyframes are the default and do not require catalog access."
+  ]
+}

@@ -1,7 +1,7 @@
 -- Bounded local movement effects. No camera type/subject or world gravity changes.
 return function(Kit)
 	local M = { Enabled=true, LastError=nil }
-	local pieces, wind = {}, nil
+	local pieces = {}
 	local cameraOwner, cameraBase, cameraApplied
 	local offsetHum, offsetBase, offsetApplied
 	local pulse, shake, stopped = 0, 0, false
@@ -17,7 +17,6 @@ return function(Kit)
 		restoreCamera();restoreOffset()
 		for _,p in ipairs(pieces) do p.Part:Destroy() end
 		table.clear(pieces)
-		if wind then wind:Destroy();wind=nil end
 		pulse,shake=0,0
 	end
 	function M.SetEnabled(on)
@@ -89,13 +88,6 @@ return function(Kit)
 			offsetApplied=offsetBase+Vector3.new(math.sin(os.clock()*57)*shake,math.cos(os.clock()*43)*shake*.6,0)
 			hum.CameraOffset=offsetApplied
 		end
-		local volume=airborne and math.clamp((speed-45)/250,0,1)*.2 or 0
-		if volume>0 and root and (not wind or wind.Parent~=root) then
-			if wind then wind:Destroy() end
-			wind=Kit.create("Sound",{Name="RiftHulkWind",SoundId="rbxassetid://5813077875",Looped=true,Volume=0},root)
-			wind:Play()
-		end
-		if wind then wind.Volume=volume;wind.PlaybackSpeed=.85+math.clamp(speed/500,0,.45);if volume==0 then wind:Destroy();wind=nil end end
 	end
 	function M.Destroy() if stopped then return end;M.Clear();stopped=true end
 	return M
