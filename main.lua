@@ -1,3 +1,4 @@
+-- RiftHub-Entry: hulk-character
 -- Rift Hub / Hulk / 3.0 | Rift Gamma original Hulk motion
 -- Original motion and controller code are embedded. Catalog playback is optional.
 local env = type(getgenv) == "function" and getgenv() or _G

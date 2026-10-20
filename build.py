@@ -8,7 +8,8 @@ brand=(root/'src/Brand.lua').read_text()
 effects=(root/'src/Effects.lua').read_text()
 motion=(root/'src/HulkMotion.lua').read_text()
 catalog=(root/'src/AnimationCatalog.lua').read_text()
-source='''-- Rift Hub / Hulk / 3.0 | Rift Gamma original Hulk motion
+source='''-- RiftHub-Entry: hulk-character
+-- Rift Hub / Hulk / 3.0 | Rift Gamma original Hulk motion
 -- Original motion and controller code are embedded. Catalog playback is optional.
 local env = type(getgenv) == "function" and getgenv() or _G
 local existing = env.RiftHulkCharacter
@@ -56,7 +57,7 @@ env.RiftHulkCharacter=api
 return api
 '''
 (root/'main.lua').write_text(source)
-(root/'execute.lua').write_text('loadstring(game:HttpGet("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/main.lua?cb=" .. tostring(os.time())))()\n')
+(root/'execute.lua').write_text('-- Hulk is a separate script; this loader is never used by main startup.\nlocal source=game:HttpGet("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/main.lua?cb="..tostring(os.time()))\nlocal header="-- RiftHub-Entry: hulk-character"\nassert(type(source)=="string" and source:sub(1,#header)==header,"Wrong Hulk script response; reopen Rift and retry")\nlocal chunk,err=loadstring(source,"=RiftHubHulk/main.lua")\nassert(chunk,err)\nlocal app=chunk()\nassert(type(app)=="table" and app.Game=="Hulk" and app.Gui and app.Gui.Parent,"Hulk did not finish opening")\nreturn app\n')
 page='''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rift Hulk — editable full script</title><style>
 :root{color-scheme:dark;font-family:system-ui;background:#0e1711;color:#e5efe7}body{max-width:1000px;margin:auto;padding:20px}h1{font-size:24px}p{color:#afc7b5;line-height:1.5}.tools{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}button{background:#28643b;color:white;border:1px solid #428a54;border-radius:8px;padding:12px 18px;font:600 14px system-ui}textarea{box-sizing:border-box;width:100%;height:65vh;min-height:320px;padding:14px;background:#111e16;color:#e3efe6;border:1px solid #355540;border-radius:10px;font:13px/1.6 ui-monospace,monospace;tab-size:4;white-space:pre}#status{min-height:28px;color:#a8eaba}</style></head><body>
 <h1>Rift Gamma / Hulk · 3.0</h1><p>Original Hulk motion: breathing stance, heavy walk/run, deep charge, takeoff, tucked leap, meteor dive, two-fist landing and Gamma Roar. Hold POWER LEAP, then release. BOUND jumps quickly; METEOR dives; GAMMA ROAR plays a grounded pose. Keys: Z / X / C / R. Original mode needs no animation asset access. Optional Catalog mode resolves items from a researched Hulk pack and falls back to original motion.</p>
