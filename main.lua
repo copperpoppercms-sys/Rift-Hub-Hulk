@@ -1,6 +1,6 @@
 -- RiftHub-Entry: hulk-character
--- Rift Hub / Hulk / 3.0 | Rift Gamma original Hulk motion
--- Original motion and controller code are embedded. Catalog playback is optional.
+-- Rift Hub / Hulk / 4.0 | native animations and character physics
+-- Uses native tracks on the existing character Animator. Observer replication is unverified.
 local env = type(getgenv) == "function" and getgenv() or _G
 local existing = env.RiftHulkCharacter
 if type(existing) == "table" and type(existing.Unload) == "function" then pcall(existing.Unload) end
@@ -18,310 +18,213 @@ function Kit.create(class,props,parent)
  if parent then obj.Parent=parent end
  return obj
 end
-local HulkMotion=(function()
--- Original Rift Gamma keyframes, authored here rather than copied from a game clip.
--- Angles are parent-body axes in degrees; root Y is a visual joint offset only.
-local function pose(values) return values end
-local clips = {
-	idle={Loop=2.4,Frames={
-		{0,pose({root={-4,0,0,-.04},waist={-8,0,0},neck={8,0,0},hip={3,0,4},knee={-6,0,0},shoulder={7,0,18},elbow={28,0,0},wrist={-5,0,0}})},
-		{1.2,pose({root={-3,0,0,0},waist={-5,0,0},neck={6,0,0},hip={2,0,4},knee={-4,0,0},shoulder={10,0,20},elbow={32,0,0},wrist={-5,0,0}})},
-		{2.4,pose({root={-4,0,0,-.04},waist={-8,0,0},neck={8,0,0},hip={3,0,4},knee={-6,0,0},shoulder={7,0,18},elbow={28,0,0},wrist={-5,0,0}})},
-	}},
-	charging={Frames={
-		{0,pose({root={-4,0,0,0},waist={-8,0,0},neck={8,0,0},hip={5,0,5},knee={-10,0,0},ankle={5,0,0},shoulder={8,0,18},elbow={30,0,0}})},
-		{.55,pose({root={-9,0,0,-.44},waist={-20,0,0},neck={18,0,0},hip={30,0,8},knee={-60,0,0},ankle={30,0,0},shoulder={-12,0,23},elbow={65,0,0}})},
-		{1,pose({root={-12,0,0,-.9},waist={-28,0,0},neck={24,0,0},hip={52,0,10},knee={-100,0,0},ankle={48,0,0},shoulder={-20,0,25},elbow={80,0,0},wrist={-8,0,0}})},
-	}},
-	launching={Frames={
-		{0,pose({root={-12,0,0,-.18},waist={-22,0,0},neck={20,0,0},hip={28,0,8},knee={-55,0,0},ankle={25,0,0},shoulder={35,0,18},elbow={65,0,0}})},
-		{.12,pose({root={-14,0,0,0},waist={-10,0,0},neck={13,0,0},hip={-8,0,5},knee={-10,0,0},ankle={16,0,0},shoulder={100,0,15},elbow={25,0,0}})},
-		{.32,pose({root={-12,0,0,0},waist={-8,0,0},neck={15,0,0},hip={25,0,7},knee={-50,0,0},ankle={25,0,0},shoulder={105,0,14},elbow={20,0,0},wrist={0,0,0}})},
-	}},
-	airborne={Frames={{0,pose({root={-12,0,0,0},waist={-8,0,0},neck={15,0,0},hip={25,0,7},knee={-50,0,0},ankle={25,0,0},shoulder={105,0,14},elbow={20,0,0},wrist={0,0,0}})}}},
-	falling={Frames={{0,pose({root={-6,0,0,0},waist={-14,0,0},neck={20,0,0},hip={42,0,10},knee={-72,0,0},ankle={30,0,0},shoulder={62,0,28},elbow={42,0,0},wrist={0,0,0}})}}},
-	slamming={Frames={
-		{0,pose({root={-8,0,0,0},waist={-8,0,0},neck={15,0,0},hip={25,0,10},knee={-45,0,0},shoulder={105,0,14},elbow={30,0,0}})},
-		{.16,pose({root={-22,0,0,0},waist={-25,0,0},neck={22,0,0},hip={10,0,7},knee={-20,0,0},ankle={15,0,0},shoulder={150,0,7},elbow={28,0,0}})},
-	}},
-	landing={Frames={
-		{0,pose({root={-16,0,0,-.65},waist={-32,0,0},neck={28,0,0},hip={50,0,10},knee={-95,0,0},ankle={45,0,0},shoulder={42,0,10},elbow={20,0,0}})},
-		{.09,pose({root={-18,0,0,-.9},waist={-38,0,0},neck={32,0,0},hip={60,0,12},knee={-110,0,0},ankle={50,0,0},shoulder={45,0,12},elbow={16,0,0}})},
-		{.38,pose({root={-4,0,0,-.04},waist={-8,0,0},neck={8,0,0},hip={3,0,4},knee={-6,0,0},shoulder={7,0,18},elbow={28,0,0}})},
-	}},
-	roaring={Frames={
-		{0,pose({root={-4,0,0,-.04},waist={-8,0,0},neck={8,0,0},hip={4,0,8},knee={-8,0,0},shoulder={8,0,20},elbow={30,0,0}})},
-		{.3,pose({root={-7,0,0,-.15},waist={-18,0,0},neck={18,0,0},hip={8,0,10},knee={-18,0,0},shoulder={55,0,22},elbow={75,0,0}})},
-		{.6,pose({root={3,0,0,0},waist={8,0,0},neck={-12,0,0},hip={3,0,10},knee={-6,0,0},shoulder={-8,0,40},elbow={50,0,0}})},
-		{1.05,pose({root={0,0,0,0},waist={4,0,0},neck={-8,0,0},hip={4,0,8},knee={-8,0,0},shoulder={-4,0,32},elbow={40,0,0}})},
-		{1.35,pose({root={-4,0,0,-.04},waist={-8,0,0},neck={8,0,0},hip={4,0,8},knee={-8,0,0},shoulder={8,0,20},elbow={30,0,0}})},
-	}},
-}
-local M = {Name="Rift Gamma / original Hulk motion",Version=1}
-function M.Sample(phase, elapsed, power, side, speed)
-	phase=phase:gsub("%-arms$","")
-	side=side or 1
-	if phase=="walk" or phase=="run" then
-		local running=phase=="run"
-		local rate=running and 8 or 5.5
-		local wave=math.sin(elapsed*rate+(side<0 and math.pi or 0))
-		local stride=(running and 38 or 22)*wave
-		return {root={running and -13 or -6,0,0,-math.abs(math.sin(elapsed*rate))* .065},
-			waist={running and -17 or -9,0,0},neck={running and 17 or 10,0,0},
-			hip={stride,0,7},knee={-8-math.max(0,-wave)*(running and 65 or 38),0,0},ankle={-stride*.3,0,0},
-			shoulder={10-stride*.65,0,side*20},elbow={running and 50 or 30,0,0},wrist={-5,0,0}}
-	end
-	local clip=clips[phase] or clips.airborne
-	local time=phase=="charging" and math.clamp(power or 0,0,1) or math.max(0,elapsed or 0)
-	if clip.Loop then time%=clip.Loop end
-	local frames=clip.Frames
-	local a,b=frames[1],frames[#frames]
-	for i=1,#frames-1 do if time<=frames[i+1][1] then a,b=frames[i],frames[i+1];break end end
-	local alpha=a==b and 0 or math.clamp((time-a[1])/math.max(.001,b[1]-a[1]),0,1)
-	alpha=alpha*alpha*(3-2*alpha)
-	local result={}
-	for _,role in ipairs({"root","waist","neck","hip","knee","ankle","shoulder","elbow","wrist"}) do
-		local from,to=a[2][role] or {0,0,0,0},b[2][role] or {0,0,0,0}
-		local value={}
-		for axis=1,4 do value[axis]=(from[axis] or 0)+((to[axis] or 0)-(from[axis] or 0))*alpha end
-		if role=="shoulder" or role=="hip" then value[3]*=side end
-		result[role]=value
-	end
-	return result
-end
-return M
-
-end)()
 local CatalogCtor=(function()
--- Catalog item metadata checked against Roblox's bundle API on 2026-10-19.
--- These are avatar catalog containers, NOT raw Animation asset IDs.
+-- Hulk catalog containers plus Roblox-documented, type-24 native fallbacks.
 local items={Idle=90553825422454,Walk=137699728035178,Run=133167141310794,
-	Leap=102511523957119,Fall=108019215607685}
+ Leap=102511523957119,Fall=108019215607685,Emote=131436996931059}
+local aliases={Crouch="Idle",Slam="Emote"}
+-- Roblox's Werewolf set is a hunched creature fallback, not a claimed Hulk asset.
+local fallback={Idle="1083195517",Walk="1083178339",Run="1083216690",Leap="1083218792",Fall="1083189019",Emote="1099492820"}
+local gameSlots={Idle="idle",Walk="walk",Run="run",Leap="jump",Fall="fall"}
 return function()
-	local cache,status,pending={}, {}, {}
-	local stopped=false
-	local M={Items=items,Name="Hulk Smash! Animation Pack",Creator="Gentle Blox",
-		Source="https://www.roblox.com/bundles/263899055278099/Hulk-Smash-Animation-Pack"}
-	function M.Get(label)
-		if stopped or not items[label] then return nil,"Original Rift Gamma keyframes" end
-		if cache[label] then return cache[label],status[label] end
-		if status[label] and not pending[label] then return nil,status[label] end
-		if not pending[label] then
-			pending[label]=true;status[label]="Resolving catalog item; original motion active"
-			task.spawn(function()
-				-- Inspect only an Animation object returned by Roblox. Never parent/import
-				-- scripts, require modules, or execute model contents.
-				local ok,objects=pcall(function() return game:GetObjects("rbxassetid://"..items[label]) end)
-				local resolved
-				if ok and type(objects)=="table" then
-					for _,object in ipairs(objects) do
-						pcall(function()
-							local animation=object:IsA("Animation") and object or object:FindFirstChildWhichIsA("Animation",true)
-							if animation then
-								local id=animation.AnimationId:match("%d+")
-								if id and tonumber(id)~=items[label] and tonumber(id)>0 then resolved="rbxassetid://"..id end
-							end
-						end)
-						pcall(function() object:Destroy() end)
-					end
-				end
-				if stopped then return end
-				pending[label]=nil
-				cache[label]=resolved
-				status[label]=resolved and "Playable Animation reference resolved; playback unverified" or "Catalog unavailable or no playable Animation; original motion active"
-			end)
-		end
-		return cache[label],status[label]
-	end
-	function M.IsPending(label) return pending[label]==true end
-	function M.Stop() stopped=true;table.clear(cache);table.clear(status);table.clear(pending) end
-	return M
+ local cache,status,pending,failed={}, {}, {}, {}
+ local stopped=false
+ local M={Items=items,Name="Hulk native animation bank",Creator="Gentle Blox / Roblox",
+  Source="https://www.roblox.com/bundles/263899055278099/Hulk-Smash-Animation-Pack"}
+ local function request(label)
+  if stopped or not items[label] or pending[label] or status[label] then return end
+  pending[label]=true;status[label]="Resolving Hulk catalog reference"
+  task.spawn(function()
+   local ok,objects=pcall(function() return game:GetObjects("rbxassetid://"..items[label]) end)
+   local resolved
+   if ok and type(objects)=="table" then
+    for _,object in ipairs(objects) do
+     pcall(function()
+      local animation=object:IsA("Animation") and object or object:FindFirstChildWhichIsA("Animation",true)
+      if animation then
+       local id=animation.AnimationId:match("%d+")
+       if id and tonumber(id)>0 and tonumber(id)~=items[label] then resolved="rbxassetid://"..id end
+      end
+     end)
+     pcall(function() object:Destroy() end)
+    end
+   end
+   if stopped then return end
+   pending[label]=nil;cache[label]=resolved
+   status[label]=resolved and "Hulk catalog native reference" or "Hulk catalog unavailable"
+  end)
+ end
+ function M.Get(requested,rig,char)
+  local label=aliases[requested] or requested
+  if stopped then return nil,"Animation bank stopped" end
+  if tostring(rig):find("R6",1,true) then
+   -- Keep R6 clips tied to the actual game's rig; never play an R15 pack on it.
+   local animate=char and char:FindFirstChild("Animate")
+   local folder=animate and gameSlots[label] and animate:FindFirstChild(gameSlots[label])
+   local animation=folder and folder:FindFirstChildWhichIsA("Animation",true)
+   local id=animation and animation.AnimationId
+   if type(id)=="string" and id:match("%d+") and not failed[id] then return id,"Existing game R6 animation" end
+   return nil,"No native R6 "..requested.." clip available"
+  end
+  request(label)
+  local primary=cache[label]
+  if primary and not failed[primary] then return primary,"Hulk catalog" end
+  local raw=fallback[label]
+  local backup=raw and "rbxassetid://"..raw
+  if backup and not failed[backup] then return backup,"Roblox Werewolf fallback" end
+  return nil,pending[label] and "Resolving Hulk animation; no playable fallback" or "Native "..requested.." unavailable; game animation retained"
+ end
+ function M.Fail(id,reason) failed[id]=reason or true end
+ function M.IsPending(label) return pending[aliases[label] or label]==true end
+ function M.Stop() stopped=true;table.clear(cache);table.clear(status);table.clear(pending);table.clear(failed) end
+ return M
 end
 
 end)()
-local PoseModule=(function()
--- Local poses for Motor6D, AnimationConstraint and skinned Bone rigs.
--- Only Transform is written; bind frames, attachments and movement controls are unchanged.
-local RunService = game:GetService("RunService")
-return function(character, Motion)
-	local joints, connections = {}, {}
-	local phase, power, destroyed = nil, 0, false
-	local phaseSince, motionSpeed = os.clock(), 0
-	local M = { Count=0, Rig="Custom", AppliedCount=0, LastError=nil,
-		Inventory={Motor6D=0,AnimationConstraint=0,Bone=0}, ScanNotes={}, PendingBindings=0 }
-	local function read(object, key)
-		if not object then return nil end
-		local ok, value=pcall(function() return object[key] end)
-		return ok and value or nil
+local NativeCtor=(function()
+-- Native AnimationTrack playback only. No Motor6D/Bone/constraint Transform writes.
+return function(player, Utils, bank)
+	local tracks, assets, errors, connections = {}, {}, {}, {}
+	local character, humanoid, animator, current, stopped
+	local M={Enabled=true,Status="Waiting for character Animator",Stage="None"}
+	local function destroySlot(slot)
+		if slot.Track then pcall(function() slot.Track:Stop(.12);slot.Track:Destroy() end) end
+		if slot.Asset then slot.Asset:Destroy() end
 	end
-	local function isa(object, kind)
-		return object and object:IsA(kind)
-	end
-	local hum = character:FindFirstChildOfClass("Humanoid")
-	if hum then M.Rig=tostring(hum.RigType):match("R%d+") or "Custom" end
-	local exactRoles = { rootjoint="root", root="root", pelvis="root", hips="root", waist="waist", neck="neck",
-		lefthip="hip", righthip="hip", leftknee="knee", rightknee="knee", leftankle="ankle", rightankle="ankle",
-		leftshoulder="shoulder", rightshoulder="shoulder", leftelbow="elbow", rightelbow="elbow",
-		leftwrist="wrist", rightwrist="wrist" }
-	local function roleFromName(name)
-		local key=tostring(name or ""):lower():gsub("[%s_%-]", ""):gsub("rigattachment$", ""):gsub("attachment$", "")
-		if exactRoles[key] then return exactRoles[key] end
-		for _,role in ipairs({"shoulder","elbow","wrist","hip","knee","ankle","waist","neck","root"}) do
-			if key:find(role,1,true) then return role end
+	function M.StopAll()
+		for _,slot in pairs(tracks) do
+			if slot.Track and slot.Track.IsPlaying then pcall(function() slot.Track:Stop(.12) end) end
 		end
-		if key:find("spine",1,true) then return "waist" end
-		return nil
+		current=nil
 	end
-	local function fromLimb(part)
-		local key=tostring(read(part,"Name") or ""):lower():gsub("[%s_%-]", "")
-		if key:find("hand",1,true) then return "wrist" end
-		if key:find("lowerarm",1,true) or key:find("forearm",1,true) then return "elbow" end
-		if key:find("arm",1,true) then return "shoulder" end
-		if key:find("foot",1,true) then return "ankle" end
-		if key:find("lowerleg",1,true) or key:find("shin",1,true) or key:find("calf",1,true) then return "knee" end
-		if key:find("leg",1,true) or key:find("thigh",1,true) then return "hip" end
-		if key:find("head",1,true) then return "neck" end
-		if key:find("torso",1,true) or key:find("spine",1,true) then return "waist" end
-		return nil
+	function M.Clear()
+		M.StopAll()
+		for _,slot in pairs(tracks) do destroySlot(slot) end
+		table.clear(tracks);table.clear(assets);table.clear(errors)
+		character,humanoid,animator=nil,nil,nil
 	end
-	local function inAccessory(node)
-		local ok, ancestor=pcall(function() return node:FindFirstAncestorOfClass("Accessory") or node:FindFirstAncestorOfClass("Tool") end)
-		return ok and ancestor~=nil
-	end
-	local rigid, bones = {}, {}
-	local function add(joint, kind)
-		M.Inventory[kind] += 1
-		if inAccessory(joint) then return end
-		local part0, part1, a0, a1, rest
-		if kind=="AnimationConstraint" then
-			a0,a1=read(joint,"Attachment0"),read(joint,"Attachment1")
-			part0,part1=read(a0,"Parent") or read(joint,"Part0"),read(a1,"Parent") or read(joint,"Part1")
-			rest=function() return a0 and a0.CFrame or joint.C0 end
-		elseif kind=="Bone" then
-			part0,part1=read(joint,"Parent"),joint
-			rest=function() return joint.CFrame end
-		else
-			part0,part1=read(joint,"Part0"),read(joint,"Part1")
-			rest=function() return joint.C0 end
+	local function bind()
+		local char=Utils.GetCharacter(player)
+		local hum=char and char:FindFirstChildOfClass("Humanoid")
+		local found=hum and hum:FindFirstChildOfClass("Animator")
+		if char~=character or hum~=humanoid or found~=animator then
+			M.Clear();character,humanoid,animator=char,hum,found
 		end
-		local role=roleFromName(joint.Name) or roleFromName(read(a0,"Name")) or roleFromName(read(a1,"Name"))
-		if not role and read(part0,"Name")=="HumanoidRootPart" then role="root" end
-		if not role then role=fromLimb(part1) end
-		if not part0 or not part1 or not role then
-			if not part0 or not part1 then M.PendingBindings += 1 end
-			if #M.ScanNotes<12 then table.insert(M.ScanNotes,joint.Name.."["..kind.."] "..(not role and "role unknown" or "binding incomplete")) end
-			return
+		if not animator then M.Status="Waiting for existing character Animator";return false end
+		return hum and hum.Health>0
+	end
+	local function getTrack(label)
+		local id,source=bank.Get(label,humanoid.RigType,character)
+		if not id then M.Status=source or "Native animation unavailable";return nil end
+		local slot=tracks[label]
+		if slot and slot.Id~=id then destroySlot(slot);tracks[label]=nil;slot=nil end
+		if not slot then
+			local asset=Instance.new("Animation");asset.AnimationId=id
+			local ok,track=pcall(function() return animator:LoadAnimation(asset) end)
+			if not ok then
+				asset:Destroy();errors[label]=tostring(track);bank.Fail(id,tostring(track));M.Status="Animation denied: "..label;return nil
+			end
+			local ground=label=="Idle" or label=="Walk" or label=="Run"
+			track.Priority=ground and Enum.AnimationPriority.Movement or Enum.AnimationPriority.Action4
+			track.Looped=ground or label=="Crouch" or label=="Fall"
+			errors[label]=nil
+			slot={Id=id,Source=source,Track=track,Asset=asset,Started=os.clock(),Label=label}
+			tracks[label]=slot
 		end
-		local sideName=(tostring(joint.Name).." "..tostring(read(a0,"Name")).." "..tostring(read(part1,"Name"))):lower()
-		local side=sideName:find("left",1,true) and -1 or 1
-		local entry={Joint=joint,Role=role,Kind=kind,Rest=rest,Side=side}
-		table.insert(kind=="Bone" and bones or rigid,entry)
-	end
-	for _, joint in ipairs(character:GetDescendants()) do
-		if isa(joint,"Motor6D") then add(joint,"Motor6D")
-		elseif isa(joint,"AnimationConstraint") then add(joint,"AnimationConstraint")
-		elseif isa(joint,"Bone") then add(joint,"Bone") end
-	end
-	local rigidLimbs, rootFound=0,false
-	for _,entry in ipairs(rigid) do
-		if entry.Role=="root" then rootFound=true else rigidLimbs+=1 end
-	end
-	-- A skinned body can have a rigid root plus bones. Do not pose both skin bones
-	-- and physical limb joints when they represent the same limbs.
-	if rigidLimbs>0 or #bones==0 then joints=rigid
-	else
-		for _,entry in ipairs(rigid) do if entry.Role=="root" then table.insert(joints,entry) end end
-		for _,entry in ipairs(bones) do if not (rootFound and entry.Role=="root") then table.insert(joints,entry) end end
-	end
-	M.Count=#joints
-	function M.NeedsRefresh()
-		if M.PendingBindings>0 then return true end
-		local counts={Motor6D=0,AnimationConstraint=0,Bone=0}
-		for _,node in ipairs(character:GetDescendants()) do
-			if isa(node,"Motor6D") then counts.Motor6D+=1
-			elseif isa(node,"AnimationConstraint") then counts.AnimationConstraint+=1
-			elseif isa(node,"Bone") then counts.Bone+=1 end
+		if errors[label] and slot.Track.Length<=0 then
+			bank.Fail(slot.Id,errors[label]);M.Status="Animation failed: "..label;return nil
 		end
-		return counts.Motor6D~=M.Inventory.Motor6D or counts.AnimationConstraint~=M.Inventory.AnimationConstraint or counts.Bone~=M.Inventory.Bone
-	end
-	function M.Describe()
-		local inventory=string.format("found Motor6D=%d, AnimationConstraint=%d, Bone=%d",M.Inventory.Motor6D,M.Inventory.AnimationConstraint,M.Inventory.Bone)
-		local details={}
-		for i,entry in ipairs(joints) do
-			if i>20 then table.insert(details,"more joints omitted");break end
-			table.insert(details,entry.Joint.Name.."["..entry.Kind.."]:"..entry.Role)
+		if slot.Track.Length<=0 and os.clock()-slot.Started>3 then
+			errors[label]="No clip data after 3 seconds"
+			bank.Fail(slot.Id,errors[label]);M.Status="Animation unavailable: "..label;return nil
 		end
-		if #details==0 then table.insert(details,"no usable joints; "..table.concat(M.ScanNotes,", ")) end
-		return inventory.." | "..table.concat(details,", ")
+		return slot
 	end
-	function M.Restore()
-		for _,entry in ipairs(joints) do
-			if entry.Base then
-				local ok,err=pcall(function()
-					if entry.Joint.Parent and entry.Joint.Transform==entry.Applied then entry.Joint.Transform=entry.Base end
-				end)
-				if not ok then M.LastError=entry.Joint.Name.." restore: "..tostring(err) end
-				entry.Base,entry.Applied=nil,nil
+	function M.Prepare()
+		if stopped or not M.Enabled or not bind() then return end
+		for _,label in ipairs({"Idle","Walk","Run","Crouch","Leap","Fall","Slam","Emote"}) do
+			local slot=getTrack(label)
+			if slot and not slot.Primed then
+				slot.Primed=true
+				pcall(function() slot.Track:Play(0,0,1) end)
+			end
+			if slot and current~=slot and slot.Primed and slot.Track.IsPlaying and slot.Track.Length>0 then
+				pcall(function() slot.Track:Stop(0) end)
 			end
 		end
 	end
-	function M.Set(nextPhase, amount, speed)
-		if phase~=nextPhase then phaseSince=os.clock() end
-		phase,power=nextPhase,math.clamp(amount or 0,0,1)
-		motionSpeed=speed or 0
-		if not phase then M.Restore();M.AppliedCount=0 end
-	end
-	local function apply()
-		if destroyed then return end
-		M.Restore();M.AppliedCount=0
-		if not phase then return end
-		local crouching=phase=="charging"
-		local armsOnly=phase:find("-arms",1,true)~=nil
-		local slamming=phase:find("slamming",1,true)~=nil
-		local landing=phase:find("landing",1,true)~=nil
-		local alpha=crouching and power or 1
-		local angles=slamming and {root=-18,waist=-20,neck=15,hip=15,knee=-25,ankle=10,shoulder=155,elbow=25,wrist=0}
-			or landing and {root=-8,waist=-20,neck=15,hip=55,knee=-95,ankle=35,shoulder=45,elbow=30,wrist=0}
-			or crouching and {root=-10,waist=-10,neck=12,hip=45,knee=-85,ankle=40,shoulder=35,elbow=-35}
-			or {root=-12,waist=-8,neck=15,hip=25,knee=-50,ankle=25,shoulder=105,elbow=20,wrist=0}
-		for _,entry in ipairs(joints) do
-			local ok,err=pcall(function()
-				local joint=entry.Joint
-				if not joint.Parent then return end
-				local arm=entry.Role=="shoulder" or entry.Role=="elbow" or entry.Role=="wrist"
-				if armsOnly and not arm then return end
-				local down=(crouching or landing) and entry.Role=="root" and -(M.Rig=="R6" and .55 or .9)*alpha or 0
-				local x,y,z=math.rad(angles[entry.Role] or 0)*alpha,0,0
-				if Motion then
-					local sample=Motion.Sample(phase,os.clock()-phaseSince,power,entry.Side,motionSpeed)
-					local value=sample[entry.Role] or {}
-					x,y,z=math.rad(value[1] or 0),math.rad(value[2] or 0),math.rad(value[3] or 0)
-					down=entry.Role=="root" and (value[4] or 0)*(M.Rig=="R6" and .61 or 1) or 0
-				end
-				local rotation=entry.Rest().Rotation
-				local delta=rotation:Inverse()*CFrame.new(0,down,0)*CFrame.Angles(x,y,z)*rotation
-				entry.Base=joint.Transform
-				-- Use a rest-relative arm pose while airborne. Adding it to the clip's
-				-- shoulder/elbow motion can bend arms behind the body or fold them twice.
-				entry.Applied=(Motion or (not crouching and arm)) and delta or delta*entry.Base
-				joint.Transform=entry.Applied;M.AppliedCount+=1
-			end)
-			if not ok then M.LastError=entry.Joint.Name..": "..tostring(err) end
+	function M.Update(phase,power)
+		if stopped or not M.Enabled then M.StopAll();M.Status="Native animations off";return M.Status end
+		if not bind() then return M.Status end
+		local root=character:FindFirstChild("HumanoidRootPart")
+		if not root then M.StopAll();M.Status="Waiting for character root";return M.Status end
+		local label
+		if phase=="charging" then label="Crouch"
+		elseif phase=="slamming" then label="Slam"
+		elseif phase=="roaring" then label="Emote"
+		elseif phase=="airborne" then label=root.AssemblyLinearVelocity.Y < -12 and "Fall" or "Leap"
+		elseif phase=="ready" then
+			if humanoid.FloorMaterial==Enum.Material.Air or humanoid.PlatformStand or humanoid.Sit
+				or character:GetAttribute("busy")==true or character:GetAttribute("canRun")==false
+				or character:GetAttribute("LOCKED_INPUTS")==true or character:GetAttribute("cutsceneLock")==true
+				or character:GetAttribute("state")=="attacking" or character:GetAttribute("state")=="skill"
+				or character:FindFirstChildOfClass("Tool") then
+				M.StopAll();M.Status="Game controls own the current animation";return M.Status
+			end
+			label=humanoid.MoveDirection.Magnitude>.1 and (root.AssemblyLinearVelocity.Magnitude>18 and "Run" or "Walk") or "Idle"
+		else M.StopAll();M.Status="Using game landing animation";return M.Status end
+		M.Stage=label
+		local slot=getTrack(label)
+		if not slot then M.StopAll();return M.Status end
+		local track=slot.Track
+		if current~=slot then
+			M.StopAll();current=slot
+			local ok,err=pcall(function() track:Play(.12,1,1);track:AdjustWeight(1,.12) end)
+			if not ok then errors[label]=tostring(err);bank.Fail(slot.Id,tostring(err));M.Status="Playback failed: "..label;return M.Status end
 		end
+		if track.Length<=0 then M.Status="Loading native "..label.."; no local pose substitute";return M.Status end
+		if not track.IsPlaying and not track.Looped then M.Status=label.." native clip finished";return M.Status end
+		if not track.IsPlaying then pcall(function() track:Play(.12,1,1);track:AdjustWeight(1,.12) end) end
+		if phase=="charging" then pcall(function() track:AdjustSpeed(.4+.4*math.clamp(power or 0,0,1)) end) end
+		M.Status=label.." native track · "..tostring(slot.Source)
+		return M.Status
 	end
-	if RunService.PreAnimation then table.insert(connections,RunService.PreAnimation:Connect(M.Restore)) end
-	table.insert(connections,(RunService.PreSimulation or RunService.Stepped):Connect(apply))
+	function M.SetEnabled(on)
+		M.Enabled=on==true
+		if not M.Enabled then M.StopAll() end
+	end
+	function M.Diagnostics()
+		local lines={"Native animation status: "..M.Status,"Animator: "..tostring(animator and "Existing character Animator; server origin unverified" or "Missing"),
+			"Observer replication: unverified; requires a second player/client test"}
+		for _,label in ipairs({"Idle","Walk","Run","Crouch","Leap","Fall","Slam","Emote"}) do
+			local slot=tracks[label]
+			table.insert(lines,label..": "..(slot and (slot.Id.." | "..tostring(slot.Source).." | playing="..tostring(slot.Track.IsPlaying).." | length="..tostring(slot.Track.Length)) or "not loaded").." | error="..tostring(errors[label]))
+		end
+		return table.concat(lines,"\n")
+	end
+	local ok,log=pcall(function() return game:GetService("LogService") end)
+	if ok and log.MessageOut then
+		table.insert(connections,log.MessageOut:Connect(function(message)
+			if stopped or type(message)~="string" or message:find("Rift Hub / Hulk",1,true) then return end
+			local lower=message:lower()
+			if not(lower:find("fail",1,true) or lower:find("error",1,true) or lower:find("permission",1,true) or lower:find("not authorized",1,true)) then return end
+			for label,slot in pairs(tracks) do
+				local id=slot.Id:match("%d+")
+				if id and message:find(id,1,true) then errors[label]=message:sub(1,400);bank.Fail(slot.Id,errors[label]) end
+			end
+		end))
+	end
 	function M.Destroy()
-		if destroyed then return end
-		destroyed=true;phase=nil;M.Restore()
-		for _,connection in ipairs(connections) do connection:Disconnect() end
-		table.clear(connections);table.clear(joints)
+		if stopped then return end
+		M.Clear();stopped=true;bank.Stop()
+		for _,c in ipairs(connections) do c:Disconnect() end
+		table.clear(connections)
 	end
 	return M
 end
 
 end)()
-local function PoseCtor(char) return PoseModule(char,HulkMotion) end
+local function AnimationsCtor(player,Utils) return NativeCtor(player,Utils,CatalogCtor()) end
 local BrandCtor=(function()
 -- Exact user-supplied Rift logo. Normalized clipping stays centered after texture resizing.
 -- One asynchronous download per script; failed image loading leaves the text fallback usable.
@@ -470,35 +373,27 @@ end
 end)()
 local LeapCtor=(function()
 -- Hulk traversal: charged leap, quick bound, air steering and downward smash.
-return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
+return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 	local Players = game:GetService("Players")
 	local RunService = game:GetService("RunService")
 	local UIS = game:GetService("UserInputService")
 	local player = Players.LocalPlayer
-	local catalog=CatalogCtor and CatalogCtor()
-	local animationIds=catalog and catalog.Items or {}
+	local native=AnimationsCtor(player,Utils)
 	local M = {
-		Enabled = false, Phase = "off", Power = 0, LastError = nil, AnimationMode = "Original",
-		AnimationIds = animationIds, EffectsEnabled = true, Bounds = 0, Slams = 0, Landings = 0, AirSteers = 0,
-		ResolvedIds={}, CatalogSource=catalog and catalog.Source,
-		AnimationStatus = { Crouch="Not requested", Leap="Not requested" },
-		AssetErrors = {}, ButtonPresses=0, Releases=0, Launches=0, LastInput="None", Motion={Status="No launch requested"},
+		Enabled = false, Phase = "off", Power = 0, LastError = nil, AnimationMode = "Native",
+		EffectsEnabled = true, Bounds = 0, Slams = 0, Landings = 0, AirSteers = 0,
+		ButtonPresses=0, Releases=0, Launches=0, LastInput="None", Motion={Status="No launch requested"},
 		Config = { ChargeSeconds = 2.2, MinUp = 55, MaxUp = 140, MinForward = 40, MaxForward = 125,
 			FullChargeUp = 180, FullChargeForward = 300,
-			CrouchAnimation = nil, LeapAnimation = nil,
-			CrouchPoseFraction = 0.5, BoundForward = 105, BoundUp = 85, SlamDown = 180,
+			BoundForward = 105, BoundUp = 85, SlamDown = 180,
 			AirAcceleration = 85, LandingSeconds = 0.38 },
 	}
-	local stopped, connections, tracks = false, {}, {}
+	local stopped, connections = false, {}
 	local gui, dock, leapButton, fill, percent, caption, boundButton, slamButton, roarButton
-	local activeInput, chargeStart, activeChar, activeRoot, activeHum, animator
-	local trackChar, crouch, jump, crouchAttempted, jumpAttempted
-	local pose, poseChar, assets, clipSlots = nil, nil, {}, {}
-	local lastPoseAttempt = -math.huge
+	local activeInput, chargeStart, activeChar, activeRoot, activeHum
 	local flightStart, seenAir, animationNote = 0, false, nil
 	local landingStart, launchSpeed, peakDown = 0, 0, 0
 	local roarStart = 0
-	local actionTracks, activeAction = {}, nil
 	local buttonMotion, boundAt, smashAt = {}, -math.huge, -math.huge
 	local effects = EffectsCtor and EffectsCtor(Kit)
 	local function fx(method, ...)
@@ -527,27 +422,6 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 		local root = char and char:FindFirstChild("HumanoidRootPart")
 		return char, hum, root
 	end
-	local function stopTrack(track)
-		if track then pcall(function() if track.IsPlaying then track:Stop(0.1) end end) end
-	end
-	local function clearPose()
-		if pose then pose:Destroy(); pose = nil end
-		poseChar = nil
-	end
-	local function clearTracks()
-		for _, track in ipairs(tracks) do
-			pcall(function() track:Stop(0); track:Destroy() end)
-		end
-		table.clear(tracks)
-		table.clear(actionTracks);activeAction=nil
-		table.clear(M.ResolvedIds)
-		for _, asset in ipairs(assets) do asset:Destroy() end
-		table.clear(assets); table.clear(clipSlots)
-		clearPose()
-		M.AnimationStatus = { Crouch="Not requested", Leap="Not requested" }
-		trackChar, animator, crouch, jump = nil, nil, nil, nil
-		crouchAttempted, jumpAttempted, animationNote = false, false, nil
-	end
 	local function paint(text)
 		if not gui then return end
 		fill.Size = UDim2.fromScale(M.Power, 1)
@@ -562,11 +436,8 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 	cancel = function(text, preserveEffects)
 		activeInput, chargeStart = nil, nil
 		activeChar, activeRoot, activeHum = nil, nil, nil
-		stopTrack(crouch);stopTrack(jump)
-		for _,track in pairs(actionTracks) do stopTrack(track) end
-		activeAction=nil;seenAir=false
+		native.StopAll();seenAir=false
 		if not preserveEffects then fx("Clear") end
-		if pose then pose.Set(nil) end
 		M.Power = 0
 		M.Phase = M.Enabled and "ready" or "off"
 		paint(text)
@@ -584,186 +455,13 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 		if requireGround and hum.FloorMaterial == Enum.Material.Air then return "Land before charging" end
 		return nil
 	end
-	local function loadTrack(char, hum, id, label)
-		if M.AnimationMode~="Auto" then M.AnimationStatus[label]="Original Rift Gamma keyframes";return nil end
-		if not id and catalog then id,M.AnimationStatus[label]=catalog.Get(label) end
-		if not id then M.AnimationStatus[label]=M.AnimationStatus[label] or "Original Rift Gamma keyframes";return nil end
-		if trackChar ~= char then
-			clearTracks(); trackChar = char
-			animator = hum:FindFirstChildOfClass("Animator")
-			if not animator then animator = Instance.new("Animator"); animator.Parent = hum end
-		end
-		M.ResolvedIds[label]=id
-		local animation = Instance.new("Animation")
-		animation.AnimationId = id
-		table.insert(assets, animation) -- retain the asset while Roblox loads its track
-		local ok, track = pcall(function() return animator:LoadAnimation(animation) end)
-		if not ok then
-			M.AnimationStatus[label] = "Load failed: " .. tostring(track)
-			return nil
-		end
-		track.Priority = (label=="Idle" or label=="Walk" or label=="Run") and Enum.AnimationPriority.Movement or Enum.AnimationPriority.Action4
-		track.Looped = false
-		table.insert(tracks, track)
-		clipSlots[track] = { Label=label, Started=os.clock(), Disabled=false, Warmed=label~="Crouch" and label~="Leap" }
-		M.AnimationStatus[label] = "Loading"
-		return track
-	end
-	local function compatible(track, char, hum)
-		local slot = clipSlots[track]
-		if not slot or slot.Disabled then return false end
-		if M.AnimationMode ~= "Auto" then
-			M.AnimationStatus[slot.Label] = "Built-in poses selected"
-			return false
-		end
-		if track.Length <= 0 then
-			if M.AssetErrors[slot.Label] then
-				M.AnimationStatus[slot.Label] = "Roblox: " .. M.AssetErrors[slot.Label]
-			elseif os.clock() - slot.Started > 1.5 then
-				M.AnimationStatus[slot.Label] = "No clip data after 1.5s; asset access or load failure possible"
-			else M.AnimationStatus[slot.Label] = "Loading; built-in pose active" end
-			return false
-		end
-		if slot.Binding == nil then
-			local ok, names = pcall(function() return track:GetTargetNames() end)
-			local targetR6, targetR15 = false, false
-			if ok and type(names) == "table" then
-				for _, name in ipairs(names) do
-					if name == "Torso" or name == "Left Arm" or name == "Right Arm" then targetR6=true end
-					if name == "UpperTorso" or name == "LowerTorso" or name:find("UpperLeg",1,true) or name:find("UpperArm",1,true) then targetR15=true end
-				end
-			end
-			local rig = tostring(hum.RigType)
-			if (targetR6 and rig:find("R15",1,true)) or (targetR15 and rig:find("R6",1,true)) then
-				slot.Binding = "Rig mismatch"
-			elseif targetR6 or targetR15 then
-				slot.Binding = "Compatible body targets"
-			else
-				-- An unavailable target list does not prove a rig mismatch. Try the loaded clip.
-				slot.Binding = "Unverified target list"
-			end
-		end
-		if slot.Binding == "Rig mismatch" then
-			M.AnimationStatus[slot.Label] = slot.Binding .. "; using built-in pose"
-			return false
-		end
-		M.AnimationStatus[slot.Label] = "Clip ready (" .. slot.Binding .. "), length=" .. string.format("%.3f", track.Length)
-		return true
-	end
-	local function ensurePose(char)
-		if not PoseCtor then return end
-		if poseChar ~= char or (pose and os.clock()-lastPoseAttempt > 1 and (pose.Count == 0 or (pose.NeedsRefresh and pose.NeedsRefresh()))) then
-			clearPose()
-			lastPoseAttempt=os.clock()
-			local ok, result = pcall(PoseCtor, char)
-			if ok then pose, poseChar = result, char
-			else M.LastPoseError = tostring(result); animationNote = "Pose unavailable: " .. tostring(result) end
-		end
-	end
-	local function chooseAction(char,hum,label,id,looped)
-		local track=actionTracks[label]
-		if track==nil then
-			track=loadTrack(char,hum,id,label)
-			if track then actionTracks[label]=track
-			elseif catalog and catalog.IsPending(label) then actionTracks[label]=nil
-			else actionTracks[label]=false end
-			if track then track.Looped=looped==true end
-		end
-		return track
-	end
 	local function updateAnimation()
-		local char, hum, root = body()
-		if not char or not hum then return end
-		local charging = M.Phase == "charging"
-		local label,track="Leap",jump
-		local grounded=M.Phase=="ready"
-		local groundPhase="idle"
-		if grounded then
-			local reason=blocked(char,hum,root,true)
-			local tools=char:FindFirstChildOfClass("Tool")
-			if reason or tools or char:GetAttribute("busy")==true or char:GetAttribute("state")=="attacking" or char:GetAttribute("state")=="skill" then
-				for _,other in pairs(actionTracks) do stopTrack(other) end
-				activeAction=nil;if pose then pose.Set(nil) end;return
-			end
-			local moving=hum.MoveDirection and hum.MoveDirection.Magnitude>.1
-			groundPhase=moving and (root.AssemblyLinearVelocity.Magnitude>18 and "run" or "walk") or "idle"
-			label=groundPhase=="idle" and "Idle" or groundPhase=="run" and "Run" or "Walk"
-			track=chooseAction(char,hum,label,nil,true)
-		end
-		if grounded then -- ground clip/pose selected above
-		elseif charging then label,track="Crouch",crouch
-		elseif M.Phase=="roaring" then label,track="Roar",nil;M.AnimationStatus.Roar="Original Rift Gamma keyframes"
-		elseif M.Phase=="slamming" then label="Slam";track=chooseAction(char,hum,label,M.Config.SlamAnimation,false)
-		elseif M.Phase=="landing" then label="Land";track=chooseAction(char,hum,label,M.Config.LandAnimation,false)
-		elseif root and root.AssemblyLinearVelocity.Y < -12 and seenAir then
-			label="Fall";track=chooseAction(char,hum,label,M.Config.FallAnimation,true)
-		end
-		if activeAction~=label then
-			for _,other in pairs(actionTracks) do if other~=track then stopTrack(other) end end
-			if track~=jump then stopTrack(jump) end
-			if track and not charging and label~="Leap" then
-				pcall(function() track:Play(.12,1,1);track:AdjustWeight(1,.1);track.TimePosition=0 end)
-			end
-			activeAction=label
-		end
-		ensurePose(char)
-		local useClip = track and compatible(track, char, hum)
-		if useClip and not charging and not track.IsPlaying then useClip=false end
-		if useClip then
-			local ok, err = pcall(function()
-				if not track.IsPlaying and charging then track:Play(0.1, 1, 1) end
-				if charging then
-					track:AdjustWeight(1, 0.05)
-					local stopAt = math.max(0, track.Length - 1/60)
-					track.TimePosition = math.min(stopAt, track.Length * math.clamp(M.Config.CrouchPoseFraction,0,1) * M.Power)
-					track:AdjustSpeed(0)
-				end
-			end)
-			if not ok then
-				clipSlots[track].Disabled = true
-				M.AnimationStatus[label] = "Playback failed: " .. tostring(err)
-				useClip = false
-			end
-		end
-		local posePhase=grounded and groundPhase or charging and "charging" or M.Phase=="roaring" and "roaring" or M.Phase=="slamming" and "slamming" or M.Phase=="landing" and "landing" or (root and root.AssemblyLinearVelocity.Y < -12 and seenAir) and "falling" or os.clock()-flightStart<.32 and "launching" or "airborne"
-		if pose then
-			if useClip then
-				if charging or grounded then pose.Set(nil) else pose.Set(posePhase.."-arms") end
-			else
-				if track and track.Length > 0 then stopTrack(track) end
-				pose.Set(posePhase, M.Power,root and root.AssemblyLinearVelocity.Magnitude or 0)
-			end
-		end
-		M.LastPoseError = pose and pose.LastError or M.LastPoseError
-		animationNote = useClip and (charging and "Animation clip" or label.." clip · Hulk arms") or M.LastPoseError and "Pose error · Copy report" or pose and pose.Count > 0 and "Built-in Hulk pose" or "No compatible body joints"
+		local ok,status=pcall(native.Update,M.Phase,M.Power)
+		if not ok then M.LastAnimationError=tostring(status);animationNote="Native animation error · Copy report"
+		else animationNote=status end
 	end
-	local function prepareAnimations()
-		local char, hum, root=body()
-		if not char or not hum or not root or hum.Health <= 0 then return end
-		if trackChar and trackChar~=char then clearTracks() end
-		if not crouchAttempted then
-			crouch=loadTrack(char,hum,M.Config.CrouchAnimation,"Crouch");crouchAttempted=not(catalog and catalog.IsPending("Crouch"))
-			if crouch then pcall(function() crouch:Play(0,0,1) end) end
-		end
-		if not jumpAttempted then
-			jump=loadTrack(char,hum,M.Config.LeapAnimation,"Leap");jumpAttempted=not(catalog and catalog.IsPending("Leap"))
-			if jump then pcall(function() jump:Play(0,0,1) end) end
-		end
-		pcall(ensurePose, char) -- so the joint count is already known before the first charge, not just reported as 0
-	end
-	local function finishWarmup()
-		for track, slot in pairs(clipSlots) do
-			if not slot.Warmed then
-				if track.Length > 0 then
-					slot.Warmed = true; stopTrack(track)
-					M.AnimationStatus[slot.Label] = "Clip loaded; waiting for use"
-				elseif os.clock()-slot.Started >= 3 then
-					slot.Warmed = true; stopTrack(track)
-					M.AnimationStatus[slot.Label] = M.AssetErrors[slot.Label] or "No clip data after 3s; built-in pose available"
-				end
-			end
-		end
-	end
+	local function prepareAnimations() native.Prepare() end
+
 	local function observeMotion()
 		local motion=M.Motion
 		if not motion.Root or motion.Done or not motion.Origin then return end
@@ -783,18 +481,9 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 		local char, hum, root = body()
 		local reason = blocked(char, hum, root, true)
 		if reason then M.LastError = reason; paint(reason); return end
-		if trackChar ~= char then clearTracks() end
-		if not crouchAttempted then
-			crouch = loadTrack(char, hum, M.Config.CrouchAnimation, "Crouch")
-			crouchAttempted = not(catalog and catalog.IsPending("Crouch"))
-		end
 		activeInput, chargeStart = input, os.clock()
 		activeChar, activeHum, activeRoot = char, hum, root
 		M.LastError, M.Power, M.Phase = nil, 0, "charging"
-		if crouch then
-			local ok = pcall(function() crouch:Play(0.12, 1, 1); crouch:AdjustWeight(1, 0.12); crouch.TimePosition = 0 end)
-			if not ok then animationNote = "Animation unavailable" end
-		end
 		updateAnimation()
 		paint(animationNote)
 	end
@@ -805,7 +494,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 		activeChar,activeHum,activeRoot=char,hum,root
 		activeInput,chargeStart=nil,nil
 		M.Power=power
-		stopTrack(crouch)
+		native.StopAll()
 		local move=hum.MoveDirection
 		local direction=Vector3.new(move.X,0,move.Z)
 		if direction.Magnitude<.1 then
@@ -835,10 +524,8 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 		M.LastError=nil;M.Launches+=1
 		if quick then M.Bounds+=1;boundAt=os.clock() end
 		M.Motion={Status="Impulse applied; observing travel",Root=root,Origin=root.Position,Started=os.clock(),Requested=targetVelocity,Power=power,Peak=0,Latest=0}
-		if not jumpAttempted then jump=loadTrack(char,hum,M.Config.LeapAnimation,"Leap");jumpAttempted=true end
-		if jump then pcall(function() jump:Play(.05,1,1);jump:AdjustWeight(1,.05);jump.TimePosition=0 end) end
 		flightStart,seenAir,launchSpeed,peakDown=os.clock(),false,forward,0
-		M.Phase="airborne";activeAction=nil
+		M.Phase="airborne"
 		fx("Pulse",root.Position,power,false,char)
 		updateAnimation();paint()
 		return true
@@ -863,8 +550,8 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 		local reason=blocked(char,hum,root,true)
 		if reason then M.LastError=reason;paint(reason);return false end
 		activeChar,activeHum,activeRoot=char,hum,root
-		M.Phase="roaring";roarStart=os.clock();activeAction=nil
-		updateAnimation();paint("GAMMA ROAR · move to cancel")
+		M.Phase="roaring";roarStart=os.clock()
+		updateAnimation();paint("Hulk emote · move to cancel")
 		return true
 	end
 	function M.Slam()
@@ -934,7 +621,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 		end
 		Kit.create("TextLabel", { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = "RIFT / GAMMA · 3.0", TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = "HULK / NATIVE · 4.0", TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = "×", TextSize = 20, TextColor3 = Kit.SUB }, dock)
 		leapButton = Kit.create("TextButton", { Name = "HoldLeap", Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(132, 90),
@@ -962,7 +649,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 		boundButton.Position=UDim2.fromOffset(150,36);boundButton.Size=UDim2.fromOffset(54,40)
 		slamButton=actionButton("DownSlam","METEOR",150)
 		slamButton.Position=UDim2.fromOffset(150,82);slamButton.Size=UDim2.fromOffset(54,44);slamButton.TextSize=10
-		roarButton=actionButton("GammaRoar","GAMMA ROAR",12)
+		roarButton=actionButton("GammaRoar","HULK EMOTE",12)
 		roarButton.Position=UDim2.fromOffset(12,180);roarButton.Size=UDim2.fromOffset(192,28)
 		local function animateButton(button,pressed)
 			local scale=Kit.create("UIScale",{Scale=1},button)
@@ -984,13 +671,13 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 			M.EffectsEnabled=not M.EffectsEnabled
 			fx("SetEnabled",M.EffectsEnabled);fxButton.Text=M.EffectsEnabled and "Effects: On" or "Effects: Off"
 		end)
-		local modeButton=Kit.create("TextButton",{Name="AnimationMode",Position=UDim2.fromOffset(10,215),Size=UDim2.new(.5,-12,0,20),BackgroundTransparency=1,Text="Motion: Original",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
+		local modeButton=Kit.create("TextButton",{Name="AnimationMode",Position=UDim2.fromOffset(10,215),Size=UDim2.new(.5,-12,0,20),BackgroundTransparency=1,Text="Animations: On",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
 		local reportButton=Kit.create("TextButton",{Name="CopyAnimationReport",Position=UDim2.fromOffset(10,241),Size=UDim2.new(1,-20,0,18),BackgroundTransparency=1,Text="Copy animation report",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
 		connect(modeButton.Activated,function()
-			M.AnimationMode=M.AnimationMode=="Auto" and "Original" or "Auto"
-			clearTracks();prepareAnimations()
-			modeButton.Text=M.AnimationMode=="Auto" and "Motion: Catalog" or "Motion: Original"
-			if M.Phase~="ready" and M.Phase~="off" then updateAnimation();paint(animationNote) end
+			M.AnimationMode=M.AnimationMode=="Native" and "Off" or "Native"
+			native.SetEnabled(M.AnimationMode=="Native")
+			modeButton.Text=M.AnimationMode=="Native" and "Animations: On" or "Animations: Off"
+			updateAnimation();paint(animationNote)
 		end)
 		connect(reportButton.Activated,function()
 			local copy=setclipboard or toclipboard
@@ -1014,7 +701,7 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 	function M.SetEnabled(on)
 		if stopped then return false end
 		if not on then
-			M.Enabled = false; cancel(); stopTrack(jump); dragInput = nil
+			M.Enabled = false; cancel();native.Clear(); dragInput = nil
 			if gui then gui.Enabled = false end
 			if M.OnEnabledChanged then pcall(M.OnEnabledChanged, false) end
 			return true
@@ -1059,20 +746,8 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 	end)
 	connect(UIS.WindowFocusReleased, function() dragInput = nil; if activeInput then cancel("Charge cancelled") end end)
 	connect(player.CharacterRemoving, function()
-		cancel("Respawning…"); stopTrack(jump); clearTracks()
+		cancel("Respawning…");native.Clear()
 	end)
-	local logOk, logService=pcall(function() return game:GetService("LogService") end)
-	if logOk and logService.MessageOut then
-		connect(logService.MessageOut,function(message)
-			if type(message)~="string" or message:find("Rift Hub / Hulk",1,true) then return end
-			local lower=message:lower()
-			if not (lower:find("fail",1,true) or lower:find("error",1,true) or lower:find("permission",1,true) or lower:find("not authorized",1,true)) then return end
-			for label,asset in pairs(M.ResolvedIds) do
-				local id = asset:match("%d+")
-				if id and message:find(id,1,true) then M.AssetErrors[label]=message:gsub("[%c]"," "):sub(1,500) end
-			end
-		end,"Animation log observer")
-	end
 	local lastViewport
 	connect(RunService.Heartbeat, function(dt)
 		if stopped or not M.Enabled then return end
@@ -1085,11 +760,9 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 		fx("Update",M.Phase,char,hum,root,M.Power,dt)
 		local camera = workspace.CurrentCamera
 		if camera and camera.ViewportSize ~= lastViewport then lastViewport = camera.ViewportSize; clampDock() end
-		if trackChar and trackChar ~= char then clearTracks() end
 		if M.Phase == "ready" then
 			prepareAnimations()
-			finishWarmup()
-			if M.AnimationMode=="Original" or catalog then updateAnimation() end
+			updateAnimation();paint(animationNote)
 		elseif M.Phase == "charging" then
 			local reason = blocked(char, hum, root, true)
 			if char ~= activeChar or hum ~= activeHum or root ~= activeRoot then reason = "Character changed; charge cancelled" end
@@ -1130,37 +803,29 @@ return function(Utils, Kit, PoseCtor, Brand, EffectsCtor, CatalogCtor)
 		local function safeText(get)
 			local ok,value=pcall(get);return ok and tostring(value) or "unavailable"
 		end
-		return table.concat({"Rift Hub / Hulk / 3.0", "Phase: " .. M.Phase .. " | pose mode: " .. M.AnimationMode,
+		return table.concat({"Rift Hub / Hulk / 4.0", "Phase: " .. M.Phase .. " | animations: " .. M.AnimationMode,
 			"Rig: " .. (hum and tostring(hum.RigType) or "none"),
 			"Moves: bounds="..M.Bounds.." | smashes="..M.Slams.." | landings="..M.Landings.." | steering steps="..M.AirSteers,
 			"Effects: "..tostring(M.EffectsEnabled).." | last effect error="..tostring(M.LastEffectError),
-			"Other animations: Fall="..tostring(M.AnimationStatus.Fall).." | Smash="..tostring(M.AnimationStatus.Slam).." | Landing="..tostring(M.AnimationStatus.Land),
 			"Inputs: presses=" .. M.ButtonPresses .. " | releases=" .. M.Releases .. " | launches=" .. M.Launches .. " | last=" .. M.LastInput,
 			"Character: " .. safeText(function() return char:GetFullName() end),
 			"Body: health=" .. safeText(function() return hum.Health end) .. " | floor=" .. safeText(function() return hum.FloorMaterial end)
 				.. " | anchored=" .. safeText(function() return root.Anchored end) .. " | PlatformStand=" .. safeText(function() return hum.PlatformStand end),
 			"Locks: canRun=" .. safeText(function() return char:GetAttribute("canRun") end) .. " | LOCKED_INPUTS=" .. safeText(function() return char:GetAttribute("LOCKED_INPUTS") end)
 				.. " | cutsceneLock=" .. safeText(function() return char:GetAttribute("cutsceneLock") end),
-			"Crouch source: " .. tostring(M.ResolvedIds.Crouch or "Original Rift Gamma") .. " | " .. M.AnimationStatus.Crouch,
-			"Leap source: " .. tostring(M.ResolvedIds.Leap or "Original Rift Gamma") .. " | " .. M.AnimationStatus.Leap,
-			"Crouch playback: playing=" .. safeText(function() return crouch.IsPlaying end) .. " | length=" .. safeText(function() return crouch.Length end)
-				.. " | weight=" .. safeText(function() return crouch.WeightCurrent end) .. " | time=" .. safeText(function() return crouch.TimePosition end),
-			"Leap playback: playing=" .. safeText(function() return jump.IsPlaying end) .. " | length=" .. safeText(function() return jump.Length end)
-				.. " | weight=" .. safeText(function() return jump.WeightCurrent end) .. " | time=" .. safeText(function() return jump.TimePosition end),
-			"Built-in joints: " .. tostring(pose and pose.Count or 0) .. " (" .. (pose and pose.Describe and pose.Describe() or "pose not initialized yet") .. ")",
-			"Pose writes: " .. tostring(pose and pose.AppliedCount or 0) .. " | last pose error=" .. tostring(M.LastPoseError or (pose and pose.LastError)),
+			native.Diagnostics(),
 			"Current animation: " .. tostring(animationNote), "Last movement error: " .. tostring(M.LastError),
 			"Last runtime error: " .. tostring(M.LastRuntimeError),
 			"Movement observation: " .. M.Motion.Status .. " | peak travel=" .. string.format("%.2f",M.Motion.Peak or 0) .. " studs",
 			"Requested launch velocity: " .. tostring(M.Motion.Requested),
 			"Launch charge: " .. string.format("%.1f%%", (M.Motion.Power or 0) * 100),
-			"Roblox crouch error: " .. tostring(M.AssetErrors.Crouch), "Roblox leap error: " .. tostring(M.AssetErrors.Leap),
+			"Last native animation error: "..tostring(M.LastAnimationError),
 			"Rig binding, asset access, and playback are client observations; server movement acceptance is unverified."}, "\n")
 	end
-	function M.Panic() M.SetEnabled(false); clearTracks() end
+	function M.Panic() M.SetEnabled(false) end
 	function M.Stop()
 		if stopped then return end
-		M.Panic();fx("Destroy");if catalog then catalog.Stop() end; stopped = true
+		M.Panic();native.Destroy();fx("Destroy");stopped = true
 		for _, connection in ipairs(connections) do connection:Disconnect() end
 		table.clear(connections)
 		if gui then gui:Destroy(); gui = nil end
@@ -1171,9 +836,9 @@ end
 
 end)()
 local brand=BrandCtor("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/assets/rift_logo.jpg")
-local api=LeapCtor(Utils,Kit,PoseCtor,brand,EffectsCtor,CatalogCtor)
+local api=LeapCtor(Utils,Kit,brand,EffectsCtor,AnimationsCtor)
 api.Game="Hulk"
-api.Version="3.0"
+api.Version="4.0"
 local stop=api.Stop
 function api.Unload()
  stop()

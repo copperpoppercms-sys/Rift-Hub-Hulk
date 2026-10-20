@@ -1,5 +1,5 @@
 {
-  "checkedAt": "2026-10-19",
+  "checkedAt": "2026-10-20",
   "bundleId": 263899055278099,
   "bundleName": "Hulk Smash! Animation Pack",
   "creator": "Gentle Blox",
@@ -48,9 +48,61 @@
     }
   ],
   "notes": [
-    "Catalog item types 50/51/52/53/55 are containers, not raw Animation type 24.",
-    "The optional resolver accepts only an Animation.AnimationId returned by Roblox; it never loads the container ID as a raw clip.",
-    "Catalog availability, rig compatibility and playback must be tested inside the destination experience.",
-    "Original Rift Gamma keyframes are the default and do not require catalog access."
-  ]
+    "The Hulk pack and emote IDs are catalog containers, not raw Animation/type-24 clip IDs.",
+    "Only an Animation.AnimationId returned by Roblox is used as a Hulk native reference; catalog content is never executed.",
+    "Roblox native creature fallbacks are selected when Hulk clips are pending or unavailable, and identified by name.",
+    "No local joint pose system is embedded or called. No client-only Animator is created.",
+    "Actual playback, Animator server origin and other-player visibility require live verification."
+  ],
+  "nativeFallback": {
+    "name": "Roblox Werewolf native creature fallback",
+    "source": "https://create.roblox.com/docs/animation/using",
+    "items": [
+      {
+        "id": 1083195517,
+        "name": "Werewolf Idle",
+        "assetType": 24,
+        "creator": "Roblox"
+      },
+      {
+        "id": 1083178339,
+        "name": "Werewolf Walk",
+        "assetType": 24,
+        "creator": "Roblox"
+      },
+      {
+        "id": 1083216690,
+        "name": "Werewolf Run",
+        "assetType": 24,
+        "creator": "Roblox"
+      },
+      {
+        "id": 1083218792,
+        "name": "Werewolf Jump",
+        "assetType": 24,
+        "creator": "Roblox"
+      },
+      {
+        "id": 1083189019,
+        "name": "Werewolf Fall",
+        "assetType": 24,
+        "creator": "Roblox"
+      },
+      {
+        "id": 1099492820,
+        "name": "Werewolf Pose",
+        "assetType": 24,
+        "creator": "Roblox"
+      }
+    ],
+    "playbackVerified": false
+  },
+  "emote": {
+    "catalogId": 131436996931059,
+    "name": "Hulk Smash!",
+    "assetType": 61,
+    "creator": "FinkelBottom_Joe",
+    "metadataSource": "https://economy.roblox.com/v2/assets/131436996931059/details",
+    "playbackVerified": false
+  }
 }
