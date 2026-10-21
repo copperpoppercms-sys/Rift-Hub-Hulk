@@ -20,7 +20,14 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 	local activeInput, chargeStart, activeChar, activeRoot, activeHum
 	local flightStart, seenAir, animationNote = 0, false, nil
 	local landingStart, launchSpeed, peakDown = 0, 0, 0
-	local roarStart, dodgeStart = 0, 0
+	local roarStart = 0
+	local speedOwner,speedBase,speedApplied,speedUntil
+	local glideUntil=0
+	M.SpeedMode="Off"
+	local function stopSpeed()
+		if speedOwner and speedOwner.WalkSpeed==speedApplied then speedOwner.WalkSpeed=speedBase end
+		speedOwner,speedBase,speedApplied,speedUntil=nil,nil,nil,nil;M.SpeedMode="Off"
+	end
 	local cooldowns, abilityButtons = {}, {}
 	local airBoostUsed = false
 	M.AbilityUses = {}
@@ -66,7 +73,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 	cancel = function(text, preserveEffects)
 		activeInput, chargeStart = nil, nil
 		activeChar, activeRoot, activeHum = nil, nil, nil
-		native.StopAll();seenAir=false;airBoostUsed=false
+		native.StopAll();seenAir=false;airBoostUsed=false;glideUntil=0
 		if not preserveEffects then fx("Clear") end
 		M.Power = 0
 		M.Phase = M.Enabled and "ready" or "off"
@@ -111,6 +118,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		local char, hum, root = body()
 		local reason = blocked(char, hum, root, true)
 		if reason then M.LastError = reason; paint(reason); return end
+		stopSpeed()
 		activeInput, chargeStart = input, os.clock()
 		activeChar, activeHum, activeRoot = char, hum, root
 		M.LastError, M.Power, M.Phase = nil, 0, "charging"
@@ -121,6 +129,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		local char, hum, root=body()
 		local reason=blocked(char,hum,root,true)
 		if reason then M.LastError=reason;paint(reason);return false,reason end
+		stopSpeed()
 		activeChar,activeHum,activeRoot=char,hum,root
 		activeInput,chargeStart=nil,nil
 		M.Power=power
@@ -236,20 +245,32 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		if ok then used("SkyLeap",1.2);paint("SKY LEAP") end
 		return ok
 	end
-	function M.Dodge(kind)
-		if stopped or not M.Enabled or M.Phase~="ready" or available("Dodge")>0 then return false end
-		if kind~="Left" and kind~="Right" and kind~="Back" and kind~="Rush" then return false end
+	local function startSpeed(mode,speed,duration)
+		if stopped or not M.Enabled or M.Phase~="ready" then return false end
 		local char,hum,root=body()
-		local reason=blocked(char,hum,root,true)
-		if reason then M.LastError=reason;paint(reason);return false end
-		local forward=facing(root)
-		local right=Vector3.new(-forward.Z,0,forward.X)
-		local direction=kind=="Left" and right*-1 or kind=="Right" and right or kind=="Back" and forward*-1 or forward
-		local speed=kind=="Rush" and 100 or 76
-		if not impulse(root,direction*speed+Vector3.new(0,root.AssemblyLinearVelocity.Y,0)) then return false end
-		activeChar,activeHum,activeRoot=char,hum,root
-		M.Phase="dodging";dodgeStart=os.clock();used("Dodge",.65);used(kind,0)
-		fx("Pulse",root.Position,.3,false,char);updateAnimation();paint(kind=="Rush" and "GAMMA RUSH" or kind:upper().." DODGE")
+		local reason=blocked(char,hum,root,false)
+		if reason then paint(reason);return false end
+		if speedOwner and (speedOwner~=hum or hum.WalkSpeed~=speedApplied) then stopSpeed() end
+		if not speedOwner then speedOwner=hum;speedBase=hum.WalkSpeed end
+		speedApplied=math.max(speedBase,speed);hum.WalkSpeed=speedApplied
+		speedUntil=duration and os.clock()+duration or nil;M.SpeedMode=mode
+		paint(mode.." · use your joystick")
+		return true
+	end
+	function M.Sprint()
+		if M.SpeedMode~="Off" then stopSpeed();paint("Normal speed");return true end
+		return startSpeed("Sprint",52,nil)
+	end
+	function M.Overdrive()
+		if available("Overdrive")>0 then return false end
+		if not startSpeed("Overdrive",90,3) then return false end
+		used("Overdrive",8);return true
+	end
+	function M.FeatherFall()
+		if stopped or not M.Enabled or M.Phase~="airborne" or available("FeatherFall")>0 then return false end
+		local char,hum,root=body()
+		if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,false) or hum.FloorMaterial~=Enum.Material.Air then return false end
+		glideUntil=os.clock()+4;used("FeatherFall",6);paint("FEATHER FALL · steer with joystick")
 		return true
 	end
 	function M.AirBoost()
@@ -324,7 +345,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		end
 		Kit.create("TextLabel", { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = "HULK / NATIVE · 4.1", TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = "HULK / NATIVE · 4.2", TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = "×", TextSize = 20, TextColor3 = Kit.SUB }, dock)
 		leapButton = Kit.create("TextButton", { Name = "HoldLeap", Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(132, 90),
@@ -363,13 +384,12 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 			if button.MouseLeave then connect(button.MouseLeave,function() motion.Hover=false end) end
 		end
 		local moves={
-			{"Left","SIDESTEP L",function() return M.Dodge("Left") end,"Dodge"},
-			{"Right","SIDESTEP R",function() return M.Dodge("Right") end,"Dodge"},
-			{"Back","BACKSTEP",function() return M.Dodge("Back") end,"Dodge"},
-			{"Rush","GAMMA RUSH",function() return M.Dodge("Rush") end,"Dodge"},
+			{"Sprint","SUPER SPEED",M.Sprint,"Sprint"},
+			{"Overdrive","OVERDRIVE",M.Overdrive,"Overdrive"},
 			{"SkyLeap","SKY LEAP",M.SkyLeap,"SkyLeap"},
 			{"AirBoost","AIR SURGE",M.AirBoost,"AirBoost"},
 			{"AirBrake","AIR BRAKE",M.AirBrake,"AirBrake"},
+			{"FeatherFall","FEATHER FALL",M.FeatherFall,"FeatherFall"},
 		}
 		for i,move in ipairs(moves) do
 			local button=actionButton(move[1],move[2],12)
@@ -382,7 +402,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 				if move[3]() then descriptor.PressedAt=os.clock() end
 			end,"Ability "..move[1])
 		end
-		local credit=Kit.create("TextLabel",{Position=UDim2.fromOffset(110,316),Size=UDim2.fromOffset(94,30),BackgroundTransparency=1,
+		local credit=Kit.create("TextLabel",{Position=UDim2.fromOffset(12,316),Size=UDim2.fromOffset(192,30),BackgroundTransparency=1,
 			Text="N0VA_0100",TextSize=10,TextColor3=Kit.SUB,FontFace=Kit.face("BuilderSans")},dock)
 		animateButton(leapButton,function() return M.Phase=="charging" end)
 		animateButton(boundButton,function() return os.clock()-boundAt<.14 end)
@@ -427,7 +447,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 	function M.SetEnabled(on)
 		if stopped then return false end
 		if not on then
-			M.Enabled = false; cancel();native.Clear(); dragInput = nil
+			M.Enabled = false; stopSpeed();cancel();native.Clear(); dragInput = nil
 			if gui then gui.Enabled = false end
 			if M.OnEnabledChanged then pcall(M.OnEnabledChanged, false) end
 			return true
@@ -455,11 +475,12 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		elseif input.KeyCode==Enum.KeyCode.X then M.Bound()
 		elseif input.KeyCode==Enum.KeyCode.C then M.Slam()
 		elseif input.KeyCode==Enum.KeyCode.R then M.Roar()
-		elseif input.KeyCode==Enum.KeyCode.V then M.Dodge("Rush")
-		elseif input.KeyCode==Enum.KeyCode.B then M.Dodge("Back")
+		elseif input.KeyCode==Enum.KeyCode.V then M.Sprint()
+		elseif input.KeyCode==Enum.KeyCode.B then M.Overdrive()
 		elseif input.KeyCode==Enum.KeyCode.G then M.SkyLeap()
 		elseif input.KeyCode==Enum.KeyCode.T then M.AirBoost()
-		elseif input.KeyCode==Enum.KeyCode.Y then M.AirBrake() end
+		elseif input.KeyCode==Enum.KeyCode.Y then M.AirBrake()
+		elseif input.KeyCode==Enum.KeyCode.H then M.FeatherFall() end
 	end,"Keyboard control") end
 	connect(UIS.InputEnded, function(input)
 		if activeInput and (input == activeInput or (input.UserInputType == Enum.UserInputType.MouseButton1 and activeInput.UserInputType == Enum.UserInputType.MouseButton1)) then
@@ -477,7 +498,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 	end)
 	connect(UIS.WindowFocusReleased, function() dragInput = nil; if activeInput then cancel("Charge cancelled") end end)
 	connect(player.CharacterRemoving, function()
-		cancel("Respawning…");native.Clear()
+		stopSpeed();cancel("Respawning…");native.Clear()
 	end)
 	local lastViewport
 	connect(RunService.Heartbeat, function(dt)
@@ -488,13 +509,18 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		end
 		for _,entry in ipairs(abilityButtons) do
 			local remaining=available(entry.Cooldown)
-			local air=entry.Id=="AirBoost" or entry.Id=="AirBrake"
+			local air=entry.Id=="AirBoost" or entry.Id=="AirBrake" or entry.Id=="FeatherFall"
 			local enabled=air and M.Phase=="airborne" or not air and M.Phase=="ready"
 			if entry.Id=="AirBoost" and airBoostUsed then enabled=false end
-			entry.Button.Text=remaining>.05 and string.format("%s %.1f",entry.Text,remaining) or entry.Text
+			entry.Button.Text=entry.Id=="Sprint" and (M.SpeedMode~="Off" and "SPEED: "..M.SpeedMode:upper() or "SUPER SPEED") or remaining>.05 and string.format("%s %.1f",entry.Text,remaining) or entry.Text
 			entry.Button.TextColor3=enabled and remaining<=.05 and Kit.INK or Kit.SUB
 		end
 		local char, hum, root = body()
+		if speedOwner then
+			if hum~=speedOwner or blocked(char,hum,root,false) or M.Phase~="ready" or hum.WalkSpeed~=speedApplied then
+				stopSpeed()
+			elseif speedUntil and os.clock()>=speedUntil then stopSpeed() end
+		end
 		observeMotion()
 		fx("Update",M.Phase,char,hum,root,M.Power,dt)
 		local camera = workspace.CurrentCamera
@@ -515,6 +541,10 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 			if reason then cancel(reason);return end
 			if hum.FloorMaterial==Enum.Material.Air then
 				seenAir=true;peakDown=math.max(peakDown,-root.AssemblyLinearVelocity.Y)
+				if M.Phase=="airborne" and os.clock()<glideUntil and root.AssemblyLinearVelocity.Y < -25 then
+					local velocity=root.AssemblyLinearVelocity
+					impulse(root,Vector3.new(velocity.X,-25,velocity.Z))
+				end
 				if M.Phase=="airborne" and os.clock()-flightStart>.08 then steer(hum,root,dt) end
 			end
 			updateAnimation()
@@ -523,9 +553,6 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 				land(char,hum,root)
 			elseif hum.FloorMaterial~=Enum.Material.Air and elapsed>.5 and not seenAir then cancel("Launch stopped on the ground")
 			elseif elapsed>12 then cancel("Leap ended") end
-		elseif M.Phase=="dodging" then
-			if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,false) then cancel();return end
-			if os.clock()-dodgeStart>=.28 then cancel(nil,true) else updateAnimation() end
 		elseif M.Phase=="roaring" then
 			if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,true) then cancel();return end
 			if hum.MoveDirection.Magnitude>.1 or os.clock()-roarStart>=1.35 then cancel(nil,true)
@@ -545,9 +572,10 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		local function safeText(get)
 			local ok,value=pcall(get);return ok and tostring(value) or "unavailable"
 		end
-		return table.concat({"Rift Hub / Hulk / 4.1", "Phase: " .. M.Phase .. " | animations: " .. M.AnimationMode,
+		return table.concat({"Rift Hub / Hulk / 4.2", "Phase: " .. M.Phase .. " | animations: " .. M.AnimationMode,
 			"Rig: " .. (hum and tostring(hum.RigType) or "none"),
 			"Moves: bounds="..M.Bounds.." | smashes="..M.Slams.." | landings="..M.Landings.." | steering steps="..M.AirSteers,
+			"Speed mode: "..M.SpeedMode.." | speed="..safeText(function() return hum.WalkSpeed end),
 			"Effects: "..tostring(M.EffectsEnabled).." | last effect error="..tostring(M.LastEffectError),
 			"Inputs: presses=" .. M.ButtonPresses .. " | releases=" .. M.Releases .. " | launches=" .. M.Launches .. " | last=" .. M.LastInput,
 			"Character: " .. safeText(function() return char:GetFullName() end),

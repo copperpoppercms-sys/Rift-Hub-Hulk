@@ -5,11 +5,12 @@ root=Path(__file__).parent
 leap=(root/'src/HulkLeap.lua').read_text()
 brand=(root/'src/Brand.lua').read_text()
 effects=(root/'src/Effects.lua').read_text()
+charge=(root/'src/ChargePose.lua').read_text()
 native=(root/'src/NativeAnimations.lua').read_text()
 catalog=(root/'src/AnimationCatalog.lua').read_text()
 source='''-- RiftHub-Entry: hulk-character
--- Rift Hub / Hulk / 4.1 | native animations and character physics
--- Uses native tracks on the existing character Animator. Observer replication is unverified.
+-- Rift Hub / Hulk / 4.2 | native animations and character physics
+-- Native movement tracks, local charge crouch and character physics. Observer replication is unverified.
 local env = type(getgenv) == "function" and getgenv() or _G
 local existing = env.RiftHulkCharacter
 if type(existing) == "table" and type(existing.Unload) == "function" then pcall(existing.Unload) end
@@ -29,9 +30,11 @@ function Kit.create(class,props,parent)
 end
 local CatalogCtor=(function()
 '''+catalog+'''\nend)()
+local ChargeCtor=(function()
+'''+charge+'''\nend)()
 local NativeCtor=(function()
 '''+native+'''\nend)()
-local function AnimationsCtor(player,Utils) return NativeCtor(player,Utils,CatalogCtor()) end
+local function AnimationsCtor(player,Utils) return NativeCtor(player,Utils,CatalogCtor(),ChargeCtor) end
 local BrandCtor=(function()
 '''+brand+'''\nend)()
 local EffectsCtor=(function()
@@ -41,7 +44,7 @@ local LeapCtor=(function()
 local brand=BrandCtor("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/assets/rift_logo.jpg")
 local api=LeapCtor(Utils,Kit,brand,EffectsCtor,AnimationsCtor)
 api.Game="Hulk"
-api.Version="4.1"
+api.Version="4.2"
 local stop=api.Stop
 function api.Unload()
  stop()
@@ -57,7 +60,7 @@ return api
 (root/'execute.lua').write_text('-- Hulk is a separate script; this loader is never used by main startup.\nlocal source=game:HttpGet("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/main.lua?cb="..tostring(os.time()))\nlocal header="-- RiftHub-Entry: hulk-character"\nassert(type(source)=="string" and source:sub(1,#header)==header,"Wrong Hulk script response; reopen Rift and retry")\nlocal chunk,err=loadstring(source,"=RiftHubHulk/main.lua")\nassert(chunk,err)\nlocal app=chunk()\nassert(type(app)=="table" and app.Game=="Hulk" and app.Gui and app.Gui.Parent,"Hulk did not finish opening")\nreturn app\n')
 page='''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rift Hulk — editable full script</title><style>
 :root{color-scheme:dark;font-family:system-ui;background:#0e1711;color:#e5efe7}body{max-width:1000px;margin:auto;padding:20px}h1{font-size:24px}p{color:#afc7b5;line-height:1.5}.tools{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}button{background:#28643b;color:white;border:1px solid #428a54;border-radius:8px;padding:12px 18px;font:600 14px system-ui}textarea{box-sizing:border-box;width:100%;height:65vh;min-height:320px;padding:14px;background:#111e16;color:#e3efe6;border:1px solid #355540;border-radius:10px;font:13px/1.6 ui-monospace,monospace;tab-size:4;white-space:pre}#status{min-height:28px;color:#a8eaba}</style></head><body>
-<h1>Rift Hulk · 4.1</h1><p>Native animation tracks and character physics. Hold POWER LEAP and release; tap BOUND for a quick jump, METEOR to dive, or HULK EMOTE for a native pose. New: SIDESTEP L/R, BACKSTEP, GAMMA RUSH, SKY LEAP, AIR SURGE and AIR BRAKE. Buttons show cooldowns. Keys: Z leap, X bound, C meteor, R emote, V rush, B backstep, G sky leap, T air surge, Y air brake. Native Hulk clips are tried first, with a documented Roblox creature fallback. No local joint pose substitute. Missing animations appear in the report. Other-player visibility and server movement acceptance require in-game testing.</p>
+<h1>Rift Hulk · 4.2</h1><p>Native animation tracks and character physics. Hold POWER LEAP and release; tap BOUND for a quick jump, METEOR to dive, or HULK EMOTE for a native pose. Charge now deepens a locally authored crouch. New: SUPER SPEED toggle (52), OVERDRIVE (90 for 3 seconds), FEATHER FALL, SKY LEAP, AIR SURGE and AIR BRAKE. Keys: Z leap, X bound, C meteor, R emote, V speed, B overdrive, G sky leap, T air surge, Y air brake, H feather fall. Native Hulk clips are tried first, with a documented Roblox creature fallback. The charge crouch is local; native tracks handle the other animations. Missing animations appear in the report. Other-player visibility and server movement acceptance require in-game testing.</p>
 <div class="tools"><button id="copy">Copy all code</button><button id="select">Select all</button><button id="download">Download .lua</button></div><div id="status" role="status" aria-live="polite">The full script below is editable.</div><textarea id="source" aria-label="Full editable Luau script" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off">'''+html.escape(source)+'''</textarea><script>
 const source=document.getElementById('source'),status=document.getElementById('status');
 function selectAll(){source.focus();source.select();source.setSelectionRange(0,source.value.length)}

@@ -116,6 +116,9 @@ local task={spawn=function(fn) fn() end}
 local bankCtor=(function()
 -- CATALOG
 end)()
+local chargeCtor=(function()
+-- CHARGE
+end)()
 local nativeCtor=(function()
 -- NATIVE
 end)()
@@ -125,7 +128,7 @@ end)()
 local create=(function()
 -- HULK LEAP
 end)()
-local function animFactory(p,u) return nativeCtor(p,u,bankCtor()) end
+local function animFactory(p,u) return nativeCtor(p,u,bankCtor(),chargeCtor) end
 local function make() return create(Utils,Kit,nil,effectsCtor,animFactory) end
 local function step(dt) clock+=dt;run.Heartbeat:Fire(dt) end
 local function widget(name)
@@ -146,7 +149,7 @@ local function activeId(id)
  for _,t in ipairs(animationTracks) do if not t.Destroyed and t.Id==id and t.IsPlaying and t.WeightCurrent==1 then return t end end
 end
 local function listenerCleanup()
- check(UIS.InputBegan:Count()==0 and UIS.InputEnded:Count()==0 and run.Heartbeat:Count()==0 and logs.MessageOut:Count()==0,"unload leaked listeners")
+ check(UIS.InputBegan:Count()==0 and UIS.InputEnded:Count()==0 and run.Heartbeat:Count()==0 and logs.MessageOut:Count()==0 and run.PreSimulation:Count()==0,"unload leaked listeners")
 end
 -- Native clips use an existing Animator; physics and touch ownership remain intact.
 local originals={};for i,j in ipairs(player.Character.joints) do originals[i]=j.Transform end
@@ -270,47 +273,52 @@ check(safe.Phase=="ready","death did not end movement")
 player.CharacterRemoving:Fire();player.Character=character();step(.1)
 check(safe.Phase=="ready","respawn did not reset movement")
 safe.Stop();listenerCleanup()
--- Expanded moves: grounded direction, shared cooldown, air ownership and locks.
+-- Speed ownership and timed boosts preserve game changes, charge/respawn restore ownership.
 player.Character=character();local moves=make();moves.SetEnabled(true)
 local h,r=player.Character.hum,player.Character.root
-check(not moves.AirBoost() and not moves.AirBrake(),"air actions worked on ground")
-check(not moves.Dodge("invalid"),"unknown dodge accepted")
-check(moves.Dodge("Left"),"left dodge failed")
-near(r.AssemblyLinearVelocity.X,-76);near(r.AssemblyLinearVelocity.Y,0)
-check(moves.Phase=="dodging" and not moves.Dodge("Right"),"dodge spam accepted")
-step(.3);check(moves.Phase=="ready" and moves.Cooldown("Dodge")>0,"dodge recovery/cooldown failed")
-check(not moves.Dodge("Back"),"shared dodge cooldown bypassed")
-step(.4);check(moves.Dodge("Right"),"right dodge failed")
-near(r.AssemblyLinearVelocity.X,76)
-step(.7);check(moves.Dodge("Back"),"backstep failed");near(r.AssemblyLinearVelocity.Z,76)
-step(.7);check(moves.Dodge("Rush"),"rush failed");near(r.AssemblyLinearVelocity.Z,-100)
-step(.7);h.FloorMaterial=Enum.Material.Air
-check(not moves.Dodge("Left"),"ground dodge worked in air")
-h.FloorMaterial=Enum.Material.Concrete
-player.Character.attributes.LOCKED_INPUTS=true
-check(not moves.SkyLeap() and not moves.Dodge("Left"),"new moves bypassed input lock")
-player.Character.attributes.LOCKED_INPUTS=false
-check(moves.SkyLeap(),"sky leap failed");near(r.AssemblyLinearVelocity.Y,155);near(r.AssemblyLinearVelocity.Z,-18)
-check(not moves.SkyLeap(),"sky leap repeated in flight")
+check(moves.Dodge==nil,"removed dodge API remained")
+check(moves.Sprint(),"speed toggle failed");near(h.WalkSpeed,52)
+check(moves.Sprint(),"speed off failed");near(h.WalkSpeed,24)
+check(moves.Overdrive(),"overdrive failed");near(h.WalkSpeed,90)
+check(not moves.Overdrive(),"boost cooldown ignored")
+step(3.1);near(h.WalkSpeed,24);check(moves.SpeedMode=="Off","timed boost did not expire")
+check(moves.Sprint(),"sprint restart failed");h.WalkSpeed=18;step(.1)
+near(h.WalkSpeed,18);check(moves.SpeedMode=="Off","speed fought game controller")
+check(moves.Sprint(),"sprint failed before charge")
+local input=touch();widget("HoldLeap").InputBegan:Fire(input);step(.4)
+near(h.WalkSpeed,18)
+check(run.PreSimulation:Count()==1,"charge crouch not bound")
+local joint=player.Character.joints[1]
+local shallow=joint.Transform.Y
+step(1.5);run.PreSimulation:Fire(.01)
+check(joint.Transform.Y<shallow,"charge did not deepen crouch")
+UIS.InputEnded:Fire(input)
+check(run.PreSimulation:Count()==0,"charge pose persisted after release")
+for _,j in ipairs(player.Character.joints) do near(j.Transform.Y,0);near(j.Transform.Angle,0) end
 h.FloorMaterial=Enum.Material.Air;step(.1)
-check(moves.AirBoost(),"air surge failed");near(r.AssemblyLinearVelocity.Z,-110)
-check(not moves.AirBoost(),"air surge repeated in one flight")
-local beforeY=r.AssemblyLinearVelocity.Y
-check(moves.AirBrake(),"air brake failed");near(r.AssemblyLinearVelocity.Y,beforeY);near(r.AssemblyLinearVelocity.Z,-19.8)
-check(not moves.AirBrake(),"air brake ignored cooldown")
-player.Character.attributes.canRun=false
-check(not moves.AirBrake(),"air action bypassed game lock")
-player.Character.attributes.canRun=true
-step(.2);h.FloorMaterial=Enum.Material.Concrete;step(.1);step(.4)
-check(moves.Phase=="ready","new moves did not recover on landing")
-check(moves.Bound(),"bound after new moves failed");h.FloorMaterial=Enum.Material.Air;step(.1)
-check(moves.AirBoost(),"air boost allowance did not reset on next leap")
+check(moves.FeatherFall(),"feather fall rejected")
+r.AssemblyLinearVelocity=Vector3.new(10,-90,20);step(.05);near(r.AssemblyLinearVelocity.Y,-25)
+check(not moves.FeatherFall(),"feather fall cooldown ignored")
+check(moves.AirBoost(),"air boost failed");check(not moves.AirBoost(),"air boost repeated")
+local before=r.AssemblyLinearVelocity.Y
+check(moves.AirBrake(),"air brake failed");near(r.AssemblyLinearVelocity.Y,before)
+check(moves.Slam(),"meteor after feather fall failed");step(.1);near(r.AssemblyLinearVelocity.Y,-180)
+land(moves);check(moves.SkyLeap(),"sky leap failed");near(r.AssemblyLinearVelocity.Y,155)
+land(moves);check(moves.Sprint(),"speed before respawn failed")
+player.CharacterRemoving:Fire();near(h.WalkSpeed,18)
+player.Character=character();step(.1)
+player.Character.attributes.LOCKED_INPUTS=true
+check(not moves.Sprint() and not moves.Overdrive(),"speed bypassed input lock")
+player.Character.attributes.LOCKED_INPUTS=false
 moves.Stop();listenerCleanup()
-player.Character=character();local badMass=make();badMass.SetEnabled(true)
-player.Character.root.AssemblyMass=0
-check(not badMass.Dodge("Rush") and badMass.Phase=="ready","invalid assembly accepted")
-check(badMass.Cooldown("Dodge")==0,"failed move consumed cooldown")
-badMass.Stop();listenerCleanup();player.Character=character()
+-- Crouch also works without a loadable native clip and never stacks per frame.
+player.Character=character();local pose=chargeCtor();local rootJoint=player.Character.joints[1]
+local baseline=rootJoint.Transform
+pose.Update(player.Character,.5);local once=rootJoint.Transform.Y
+pose.Update(player.Character,.5);near(rootJoint.Transform.Y,once)
+pose.Update(player.Character,1);check(rootJoint.Transform.Y<once,"full charge crouch not deeper")
+pose.Clear();check(rootJoint.Transform==baseline,"crouch did not restore original transform")
+listenerCleanup()
 -- Execute the actual standalone bundle and exercise a native leap and unload.
 local standaloneEnv={}
 local getgenv=function() return standaloneEnv end
@@ -319,7 +327,7 @@ Color3.new=function(...) return {...} end
 local standalone=(function()
 -- STANDALONE
 end)()
-check(standalone.Game=="Hulk" and standalone.Version=="4.1" and standalone.Gui.Parent,"standalone native entry failed")
+check(standalone.Game=="Hulk" and standalone.Version=="4.2" and standalone.Gui.Parent,"standalone native entry failed")
 check(standalone.Bound(),"standalone did not apply real character movement")
 check(activeId("rbxassetid://1083218792"),"standalone native jump missing")
 standalone.Unload()

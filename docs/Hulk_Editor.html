@@ -1,9 +1,9 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Rift Hulk — editable full script</title><style>
 :root{color-scheme:dark;font-family:system-ui;background:#0e1711;color:#e5efe7}body{max-width:1000px;margin:auto;padding:20px}h1{font-size:24px}p{color:#afc7b5;line-height:1.5}.tools{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}button{background:#28643b;color:white;border:1px solid #428a54;border-radius:8px;padding:12px 18px;font:600 14px system-ui}textarea{box-sizing:border-box;width:100%;height:65vh;min-height:320px;padding:14px;background:#111e16;color:#e3efe6;border:1px solid #355540;border-radius:10px;font:13px/1.6 ui-monospace,monospace;tab-size:4;white-space:pre}#status{min-height:28px;color:#a8eaba}</style></head><body>
-<h1>Rift Hulk · 4.1</h1><p>Native animation tracks and character physics. Hold POWER LEAP and release; tap BOUND for a quick jump, METEOR to dive, or HULK EMOTE for a native pose. New: SIDESTEP L/R, BACKSTEP, GAMMA RUSH, SKY LEAP, AIR SURGE and AIR BRAKE. Buttons show cooldowns. Keys: Z leap, X bound, C meteor, R emote, V rush, B backstep, G sky leap, T air surge, Y air brake. Native Hulk clips are tried first, with a documented Roblox creature fallback. No local joint pose substitute. Missing animations appear in the report. Other-player visibility and server movement acceptance require in-game testing.</p>
+<h1>Rift Hulk · 4.2</h1><p>Native animation tracks and character physics. Hold POWER LEAP and release; tap BOUND for a quick jump, METEOR to dive, or HULK EMOTE for a native pose. Charge now deepens a locally authored crouch. New: SUPER SPEED toggle (52), OVERDRIVE (90 for 3 seconds), FEATHER FALL, SKY LEAP, AIR SURGE and AIR BRAKE. Keys: Z leap, X bound, C meteor, R emote, V speed, B overdrive, G sky leap, T air surge, Y air brake, H feather fall. Native Hulk clips are tried first, with a documented Roblox creature fallback. The charge crouch is local; native tracks handle the other animations. Missing animations appear in the report. Other-player visibility and server movement acceptance require in-game testing.</p>
 <div class="tools"><button id="copy">Copy all code</button><button id="select">Select all</button><button id="download">Download .lua</button></div><div id="status" role="status" aria-live="polite">The full script below is editable.</div><textarea id="source" aria-label="Full editable Luau script" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" wrap="off">-- RiftHub-Entry: hulk-character
--- Rift Hub / Hulk / 4.1 | native animations and character physics
--- Uses native tracks on the existing character Animator. Observer replication is unverified.
+-- Rift Hub / Hulk / 4.2 | native animations and character physics
+-- Native movement tracks, local charge crouch and character physics. Observer replication is unverified.
 local env = type(getgenv) == &quot;function&quot; and getgenv() or _G
 local existing = env.RiftHulkCharacter
 if type(existing) == &quot;table&quot; and type(existing.Unload) == &quot;function&quot; then pcall(existing.Unload) end
@@ -84,9 +84,67 @@ return function()
 end
 
 end)()
+local ChargeCtor=(function()
+-- Authored charge-only local crouch. Native tracks still handle movement in the air.
+-- Applied after Animator evaluation; no HipHeight, controls or root physics changes.
+return function()
+ local RunService=game:GetService(&quot;RunService&quot;)
+ local M={Status=&quot;Inactive&quot;,Count=0}
+ local character,connection,power
+ local joints={}
+ local function restore()
+  for _,entry in ipairs(joints) do
+   pcall(function() if entry.Joint.Transform==entry.Applied then entry.Joint.Transform=entry.Base end end)
+  end
+ end
+ function M.Clear()
+  if connection then connection:Disconnect();connection=nil end
+  restore();table.clear(joints);character=nil;M.Count=0;M.Status=&quot;Inactive&quot;
+ end
+ local function apply()
+  local amount=.2+.8*math.clamp(power or 0,0,1)
+  for _,entry in ipairs(joints) do
+   pcall(function()
+    local current=entry.Joint.Transform
+    local base=current==entry.Applied and entry.Base or current
+    local offset=CFrame.new(0,entry.Drop*amount,0)*CFrame.Angles(math.rad(entry.Angle*amount),0,0)
+    entry.Base=base;entry.Applied=base*offset;entry.Joint.Transform=entry.Applied
+   end)
+  end
+ end
+ function M.Update(char,value)
+  if character~=char then
+   M.Clear();character=char
+   if not char then return end
+   for _,joint in ipairs(char:GetDescendants()) do
+    local kind=joint:IsA(&quot;Motor6D&quot;) or joint:IsA(&quot;AnimationConstraint&quot;) or joint:IsA(&quot;Bone&quot;)
+    if kind then
+     local name=joint.Name:lower():gsub(&quot;[%s_%-]&quot;,&quot;&quot;)
+     local angle,drop=0,0
+     if name==&quot;root&quot; or name==&quot;rootjoint&quot; then drop=-.8
+     elseif name:find(&quot;knee&quot;,1,true) then angle=-95
+     elseif name:find(&quot;hip&quot;,1,true) then angle=48
+     elseif name:find(&quot;ankle&quot;,1,true) then angle=44
+     elseif name==&quot;waist&quot; then angle=-25
+     elseif name:find(&quot;shoulder&quot;,1,true) then angle=-18
+     elseif name:find(&quot;elbow&quot;,1,true) then angle=65 end
+     if angle~=0 or drop~=0 then table.insert(joints,{Joint=joint,Angle=angle,Drop=drop}) end
+    end
+   end
+   M.Count=#joints
+   M.Status=M.Count&gt;0 and &quot;Local charge crouch&quot; or &quot;No supported crouch joints; native stance retained&quot;
+   connection=RunService.PreSimulation:Connect(apply)
+  end
+  power=value;apply()
+ end
+ return M
+end
+
+end)()
 local NativeCtor=(function()
--- Native AnimationTrack playback only. No Motor6D/Bone/constraint Transform writes.
-return function(player, Utils, bank)
+-- Native movement tracks with an isolated authored charge-crouch helper.
+return function(player, Utils, bank, ChargeCtor)
+	local crouch=ChargeCtor and ChargeCtor()
 	local tracks, assets, errors, connections = {}, {}, {}, {}
 	local character, humanoid, animator, current, stopped
 	local M={Enabled=true,Status=&quot;Waiting for character Animator&quot;,Stage=&quot;None&quot;}
@@ -95,6 +153,7 @@ return function(player, Utils, bank)
 		if slot.Asset then slot.Asset:Destroy() end
 	end
 	function M.StopAll()
+		if crouch then crouch.Clear() end
 		for _,slot in pairs(tracks) do
 			if slot.Track and slot.Track.IsPlaying then pcall(function() slot.Track:Stop(.12) end) end
 		end
@@ -156,7 +215,7 @@ return function(player, Utils, bank)
 			end
 		end
 	end
-	function M.Update(phase,power)
+	local function updateNative(phase,power)
 		if stopped or not M.Enabled then M.StopAll();M.Status=&quot;Native animations off&quot;;return M.Status end
 		if not bind() then return M.Status end
 		local root=character:FindFirstChild(&quot;HumanoidRootPart&quot;)
@@ -165,7 +224,6 @@ return function(player, Utils, bank)
 		if phase==&quot;charging&quot; then label=&quot;Crouch&quot;
 		elseif phase==&quot;slamming&quot; then label=&quot;Slam&quot;
 		elseif phase==&quot;roaring&quot; then label=&quot;Emote&quot;
-		elseif phase==&quot;dodging&quot; then label=&quot;Run&quot;
 		elseif phase==&quot;airborne&quot; then label=root.AssemblyLinearVelocity.Y &lt; -12 and &quot;Fall&quot; or &quot;Leap&quot;
 		elseif phase==&quot;ready&quot; then
 			if humanoid.FloorMaterial==Enum.Material.Air or humanoid.PlatformStand or humanoid.Sit
@@ -191,7 +249,6 @@ return function(player, Utils, bank)
 		if not track.IsPlaying then pcall(function() track:Play(label==&quot;Leap&quot; and .06 or .16,1,1);track:AdjustWeight(1,.16) end) end
 		local speed=1
 		if phase==&quot;charging&quot; then speed=.35+.5*math.clamp(power or 0,0,1)
-		elseif phase==&quot;dodging&quot; then speed=1.65
 		elseif label==&quot;Slam&quot; then speed=1.3
 		elseif label==&quot;Leap&quot; then speed=.85
 		elseif label==&quot;Run&quot; or label==&quot;Walk&quot; then
@@ -199,7 +256,18 @@ return function(player, Utils, bank)
 			speed=math.clamp(Vector3.new(velocity.X,0,velocity.Z).Magnitude/(label==&quot;Run&quot; and 24 or 12),.7,1.5)
 		end
 		pcall(function() track:AdjustSpeed(speed) end)
-		M.Status=label..&quot; native track · &quot;..tostring(slot.Source)
+		M.Status=label..&quot; native track · &quot;..tostring(slot.Source)..(phase==&quot;charging&quot; and crouch and &quot; / &quot;..crouch.Status or &quot;&quot;)
+		return M.Status
+	end
+	function M.Update(phase,power)
+		local status=updateNative(phase,power)
+		if crouch then
+			local char=Utils.GetCharacter(player)
+			local hum=char and char:FindFirstChildOfClass(&quot;Humanoid&quot;)
+			if not stopped and M.Enabled and phase==&quot;charging&quot; and hum and hum.Health&gt;0 then crouch.Update(char,power)
+			else crouch.Clear() end
+		end
+		if phase==&quot;charging&quot; and crouch then M.Status=status..&quot; / &quot;..crouch.Status..&quot; (&quot;..crouch.Count..&quot; joints)&quot; end
 		return M.Status
 	end
 	function M.SetEnabled(on)
@@ -237,7 +305,7 @@ return function(player, Utils, bank)
 end
 
 end)()
-local function AnimationsCtor(player,Utils) return NativeCtor(player,Utils,CatalogCtor()) end
+local function AnimationsCtor(player,Utils) return NativeCtor(player,Utils,CatalogCtor(),ChargeCtor) end
 local BrandCtor=(function()
 -- Exact user-supplied Rift logo. Normalized clipping stays centered after texture resizing.
 -- One asynchronous download per script; failed image loading leaves the text fallback usable.
@@ -407,7 +475,14 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 	local activeInput, chargeStart, activeChar, activeRoot, activeHum
 	local flightStart, seenAir, animationNote = 0, false, nil
 	local landingStart, launchSpeed, peakDown = 0, 0, 0
-	local roarStart, dodgeStart = 0, 0
+	local roarStart = 0
+	local speedOwner,speedBase,speedApplied,speedUntil
+	local glideUntil=0
+	M.SpeedMode=&quot;Off&quot;
+	local function stopSpeed()
+		if speedOwner and speedOwner.WalkSpeed==speedApplied then speedOwner.WalkSpeed=speedBase end
+		speedOwner,speedBase,speedApplied,speedUntil=nil,nil,nil,nil;M.SpeedMode=&quot;Off&quot;
+	end
 	local cooldowns, abilityButtons = {}, {}
 	local airBoostUsed = false
 	M.AbilityUses = {}
@@ -453,7 +528,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 	cancel = function(text, preserveEffects)
 		activeInput, chargeStart = nil, nil
 		activeChar, activeRoot, activeHum = nil, nil, nil
-		native.StopAll();seenAir=false;airBoostUsed=false
+		native.StopAll();seenAir=false;airBoostUsed=false;glideUntil=0
 		if not preserveEffects then fx(&quot;Clear&quot;) end
 		M.Power = 0
 		M.Phase = M.Enabled and &quot;ready&quot; or &quot;off&quot;
@@ -498,6 +573,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		local char, hum, root = body()
 		local reason = blocked(char, hum, root, true)
 		if reason then M.LastError = reason; paint(reason); return end
+		stopSpeed()
 		activeInput, chargeStart = input, os.clock()
 		activeChar, activeHum, activeRoot = char, hum, root
 		M.LastError, M.Power, M.Phase = nil, 0, &quot;charging&quot;
@@ -508,6 +584,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		local char, hum, root=body()
 		local reason=blocked(char,hum,root,true)
 		if reason then M.LastError=reason;paint(reason);return false,reason end
+		stopSpeed()
 		activeChar,activeHum,activeRoot=char,hum,root
 		activeInput,chargeStart=nil,nil
 		M.Power=power
@@ -623,20 +700,32 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		if ok then used(&quot;SkyLeap&quot;,1.2);paint(&quot;SKY LEAP&quot;) end
 		return ok
 	end
-	function M.Dodge(kind)
-		if stopped or not M.Enabled or M.Phase~=&quot;ready&quot; or available(&quot;Dodge&quot;)&gt;0 then return false end
-		if kind~=&quot;Left&quot; and kind~=&quot;Right&quot; and kind~=&quot;Back&quot; and kind~=&quot;Rush&quot; then return false end
+	local function startSpeed(mode,speed,duration)
+		if stopped or not M.Enabled or M.Phase~=&quot;ready&quot; then return false end
 		local char,hum,root=body()
-		local reason=blocked(char,hum,root,true)
-		if reason then M.LastError=reason;paint(reason);return false end
-		local forward=facing(root)
-		local right=Vector3.new(-forward.Z,0,forward.X)
-		local direction=kind==&quot;Left&quot; and right*-1 or kind==&quot;Right&quot; and right or kind==&quot;Back&quot; and forward*-1 or forward
-		local speed=kind==&quot;Rush&quot; and 100 or 76
-		if not impulse(root,direction*speed+Vector3.new(0,root.AssemblyLinearVelocity.Y,0)) then return false end
-		activeChar,activeHum,activeRoot=char,hum,root
-		M.Phase=&quot;dodging&quot;;dodgeStart=os.clock();used(&quot;Dodge&quot;,.65);used(kind,0)
-		fx(&quot;Pulse&quot;,root.Position,.3,false,char);updateAnimation();paint(kind==&quot;Rush&quot; and &quot;GAMMA RUSH&quot; or kind:upper()..&quot; DODGE&quot;)
+		local reason=blocked(char,hum,root,false)
+		if reason then paint(reason);return false end
+		if speedOwner and (speedOwner~=hum or hum.WalkSpeed~=speedApplied) then stopSpeed() end
+		if not speedOwner then speedOwner=hum;speedBase=hum.WalkSpeed end
+		speedApplied=math.max(speedBase,speed);hum.WalkSpeed=speedApplied
+		speedUntil=duration and os.clock()+duration or nil;M.SpeedMode=mode
+		paint(mode..&quot; · use your joystick&quot;)
+		return true
+	end
+	function M.Sprint()
+		if M.SpeedMode~=&quot;Off&quot; then stopSpeed();paint(&quot;Normal speed&quot;);return true end
+		return startSpeed(&quot;Sprint&quot;,52,nil)
+	end
+	function M.Overdrive()
+		if available(&quot;Overdrive&quot;)&gt;0 then return false end
+		if not startSpeed(&quot;Overdrive&quot;,90,3) then return false end
+		used(&quot;Overdrive&quot;,8);return true
+	end
+	function M.FeatherFall()
+		if stopped or not M.Enabled or M.Phase~=&quot;airborne&quot; or available(&quot;FeatherFall&quot;)&gt;0 then return false end
+		local char,hum,root=body()
+		if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,false) or hum.FloorMaterial~=Enum.Material.Air then return false end
+		glideUntil=os.clock()+4;used(&quot;FeatherFall&quot;,6);paint(&quot;FEATHER FALL · steer with joystick&quot;)
 		return true
 	end
 	function M.AirBoost()
@@ -711,7 +800,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		end
 		Kit.create(&quot;TextLabel&quot;, { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face(&quot;BuilderSans&quot;, Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = &quot;HULK / NATIVE · 4.1&quot;, TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = &quot;HULK / NATIVE · 4.2&quot;, TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create(&quot;TextButton&quot;, { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = &quot;×&quot;, TextSize = 20, TextColor3 = Kit.SUB }, dock)
 		leapButton = Kit.create(&quot;TextButton&quot;, { Name = &quot;HoldLeap&quot;, Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(132, 90),
@@ -750,13 +839,12 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 			if button.MouseLeave then connect(button.MouseLeave,function() motion.Hover=false end) end
 		end
 		local moves={
-			{&quot;Left&quot;,&quot;SIDESTEP L&quot;,function() return M.Dodge(&quot;Left&quot;) end,&quot;Dodge&quot;},
-			{&quot;Right&quot;,&quot;SIDESTEP R&quot;,function() return M.Dodge(&quot;Right&quot;) end,&quot;Dodge&quot;},
-			{&quot;Back&quot;,&quot;BACKSTEP&quot;,function() return M.Dodge(&quot;Back&quot;) end,&quot;Dodge&quot;},
-			{&quot;Rush&quot;,&quot;GAMMA RUSH&quot;,function() return M.Dodge(&quot;Rush&quot;) end,&quot;Dodge&quot;},
+			{&quot;Sprint&quot;,&quot;SUPER SPEED&quot;,M.Sprint,&quot;Sprint&quot;},
+			{&quot;Overdrive&quot;,&quot;OVERDRIVE&quot;,M.Overdrive,&quot;Overdrive&quot;},
 			{&quot;SkyLeap&quot;,&quot;SKY LEAP&quot;,M.SkyLeap,&quot;SkyLeap&quot;},
 			{&quot;AirBoost&quot;,&quot;AIR SURGE&quot;,M.AirBoost,&quot;AirBoost&quot;},
 			{&quot;AirBrake&quot;,&quot;AIR BRAKE&quot;,M.AirBrake,&quot;AirBrake&quot;},
+			{&quot;FeatherFall&quot;,&quot;FEATHER FALL&quot;,M.FeatherFall,&quot;FeatherFall&quot;},
 		}
 		for i,move in ipairs(moves) do
 			local button=actionButton(move[1],move[2],12)
@@ -769,7 +857,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 				if move[3]() then descriptor.PressedAt=os.clock() end
 			end,&quot;Ability &quot;..move[1])
 		end
-		local credit=Kit.create(&quot;TextLabel&quot;,{Position=UDim2.fromOffset(110,316),Size=UDim2.fromOffset(94,30),BackgroundTransparency=1,
+		local credit=Kit.create(&quot;TextLabel&quot;,{Position=UDim2.fromOffset(12,316),Size=UDim2.fromOffset(192,30),BackgroundTransparency=1,
 			Text=&quot;N0VA_0100&quot;,TextSize=10,TextColor3=Kit.SUB,FontFace=Kit.face(&quot;BuilderSans&quot;)},dock)
 		animateButton(leapButton,function() return M.Phase==&quot;charging&quot; end)
 		animateButton(boundButton,function() return os.clock()-boundAt&lt;.14 end)
@@ -814,7 +902,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 	function M.SetEnabled(on)
 		if stopped then return false end
 		if not on then
-			M.Enabled = false; cancel();native.Clear(); dragInput = nil
+			M.Enabled = false; stopSpeed();cancel();native.Clear(); dragInput = nil
 			if gui then gui.Enabled = false end
 			if M.OnEnabledChanged then pcall(M.OnEnabledChanged, false) end
 			return true
@@ -842,11 +930,12 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		elseif input.KeyCode==Enum.KeyCode.X then M.Bound()
 		elseif input.KeyCode==Enum.KeyCode.C then M.Slam()
 		elseif input.KeyCode==Enum.KeyCode.R then M.Roar()
-		elseif input.KeyCode==Enum.KeyCode.V then M.Dodge(&quot;Rush&quot;)
-		elseif input.KeyCode==Enum.KeyCode.B then M.Dodge(&quot;Back&quot;)
+		elseif input.KeyCode==Enum.KeyCode.V then M.Sprint()
+		elseif input.KeyCode==Enum.KeyCode.B then M.Overdrive()
 		elseif input.KeyCode==Enum.KeyCode.G then M.SkyLeap()
 		elseif input.KeyCode==Enum.KeyCode.T then M.AirBoost()
-		elseif input.KeyCode==Enum.KeyCode.Y then M.AirBrake() end
+		elseif input.KeyCode==Enum.KeyCode.Y then M.AirBrake()
+		elseif input.KeyCode==Enum.KeyCode.H then M.FeatherFall() end
 	end,&quot;Keyboard control&quot;) end
 	connect(UIS.InputEnded, function(input)
 		if activeInput and (input == activeInput or (input.UserInputType == Enum.UserInputType.MouseButton1 and activeInput.UserInputType == Enum.UserInputType.MouseButton1)) then
@@ -864,7 +953,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 	end)
 	connect(UIS.WindowFocusReleased, function() dragInput = nil; if activeInput then cancel(&quot;Charge cancelled&quot;) end end)
 	connect(player.CharacterRemoving, function()
-		cancel(&quot;Respawning…&quot;);native.Clear()
+		stopSpeed();cancel(&quot;Respawning…&quot;);native.Clear()
 	end)
 	local lastViewport
 	connect(RunService.Heartbeat, function(dt)
@@ -875,13 +964,18 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		end
 		for _,entry in ipairs(abilityButtons) do
 			local remaining=available(entry.Cooldown)
-			local air=entry.Id==&quot;AirBoost&quot; or entry.Id==&quot;AirBrake&quot;
+			local air=entry.Id==&quot;AirBoost&quot; or entry.Id==&quot;AirBrake&quot; or entry.Id==&quot;FeatherFall&quot;
 			local enabled=air and M.Phase==&quot;airborne&quot; or not air and M.Phase==&quot;ready&quot;
 			if entry.Id==&quot;AirBoost&quot; and airBoostUsed then enabled=false end
-			entry.Button.Text=remaining&gt;.05 and string.format(&quot;%s %.1f&quot;,entry.Text,remaining) or entry.Text
+			entry.Button.Text=entry.Id==&quot;Sprint&quot; and (M.SpeedMode~=&quot;Off&quot; and &quot;SPEED: &quot;..M.SpeedMode:upper() or &quot;SUPER SPEED&quot;) or remaining&gt;.05 and string.format(&quot;%s %.1f&quot;,entry.Text,remaining) or entry.Text
 			entry.Button.TextColor3=enabled and remaining&lt;=.05 and Kit.INK or Kit.SUB
 		end
 		local char, hum, root = body()
+		if speedOwner then
+			if hum~=speedOwner or blocked(char,hum,root,false) or M.Phase~=&quot;ready&quot; or hum.WalkSpeed~=speedApplied then
+				stopSpeed()
+			elseif speedUntil and os.clock()&gt;=speedUntil then stopSpeed() end
+		end
 		observeMotion()
 		fx(&quot;Update&quot;,M.Phase,char,hum,root,M.Power,dt)
 		local camera = workspace.CurrentCamera
@@ -902,6 +996,10 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 			if reason then cancel(reason);return end
 			if hum.FloorMaterial==Enum.Material.Air then
 				seenAir=true;peakDown=math.max(peakDown,-root.AssemblyLinearVelocity.Y)
+				if M.Phase==&quot;airborne&quot; and os.clock()&lt;glideUntil and root.AssemblyLinearVelocity.Y &lt; -25 then
+					local velocity=root.AssemblyLinearVelocity
+					impulse(root,Vector3.new(velocity.X,-25,velocity.Z))
+				end
 				if M.Phase==&quot;airborne&quot; and os.clock()-flightStart&gt;.08 then steer(hum,root,dt) end
 			end
 			updateAnimation()
@@ -910,9 +1008,6 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 				land(char,hum,root)
 			elseif hum.FloorMaterial~=Enum.Material.Air and elapsed&gt;.5 and not seenAir then cancel(&quot;Launch stopped on the ground&quot;)
 			elseif elapsed&gt;12 then cancel(&quot;Leap ended&quot;) end
-		elseif M.Phase==&quot;dodging&quot; then
-			if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,false) then cancel();return end
-			if os.clock()-dodgeStart&gt;=.28 then cancel(nil,true) else updateAnimation() end
 		elseif M.Phase==&quot;roaring&quot; then
 			if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,true) then cancel();return end
 			if hum.MoveDirection.Magnitude&gt;.1 or os.clock()-roarStart&gt;=1.35 then cancel(nil,true)
@@ -932,9 +1027,10 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		local function safeText(get)
 			local ok,value=pcall(get);return ok and tostring(value) or &quot;unavailable&quot;
 		end
-		return table.concat({&quot;Rift Hub / Hulk / 4.1&quot;, &quot;Phase: &quot; .. M.Phase .. &quot; | animations: &quot; .. M.AnimationMode,
+		return table.concat({&quot;Rift Hub / Hulk / 4.2&quot;, &quot;Phase: &quot; .. M.Phase .. &quot; | animations: &quot; .. M.AnimationMode,
 			&quot;Rig: &quot; .. (hum and tostring(hum.RigType) or &quot;none&quot;),
 			&quot;Moves: bounds=&quot;..M.Bounds..&quot; | smashes=&quot;..M.Slams..&quot; | landings=&quot;..M.Landings..&quot; | steering steps=&quot;..M.AirSteers,
+			&quot;Speed mode: &quot;..M.SpeedMode..&quot; | speed=&quot;..safeText(function() return hum.WalkSpeed end),
 			&quot;Effects: &quot;..tostring(M.EffectsEnabled)..&quot; | last effect error=&quot;..tostring(M.LastEffectError),
 			&quot;Inputs: presses=&quot; .. M.ButtonPresses .. &quot; | releases=&quot; .. M.Releases .. &quot; | launches=&quot; .. M.Launches .. &quot; | last=&quot; .. M.LastInput,
 			&quot;Character: &quot; .. safeText(function() return char:GetFullName() end),
@@ -967,7 +1063,7 @@ end)()
 local brand=BrandCtor(&quot;https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/assets/rift_logo.jpg&quot;)
 local api=LeapCtor(Utils,Kit,brand,EffectsCtor,AnimationsCtor)
 api.Game=&quot;Hulk&quot;
-api.Version=&quot;4.1&quot;
+api.Version=&quot;4.2&quot;
 local stop=api.Stop
 function api.Unload()
  stop()

@@ -1,5 +1,6 @@
--- Native AnimationTrack playback only. No Motor6D/Bone/constraint Transform writes.
-return function(player, Utils, bank)
+-- Native movement tracks with an isolated authored charge-crouch helper.
+return function(player, Utils, bank, ChargeCtor)
+	local crouch=ChargeCtor and ChargeCtor()
 	local tracks, assets, errors, connections = {}, {}, {}, {}
 	local character, humanoid, animator, current, stopped
 	local M={Enabled=true,Status="Waiting for character Animator",Stage="None"}
@@ -8,6 +9,7 @@ return function(player, Utils, bank)
 		if slot.Asset then slot.Asset:Destroy() end
 	end
 	function M.StopAll()
+		if crouch then crouch.Clear() end
 		for _,slot in pairs(tracks) do
 			if slot.Track and slot.Track.IsPlaying then pcall(function() slot.Track:Stop(.12) end) end
 		end
@@ -69,7 +71,7 @@ return function(player, Utils, bank)
 			end
 		end
 	end
-	function M.Update(phase,power)
+	local function updateNative(phase,power)
 		if stopped or not M.Enabled then M.StopAll();M.Status="Native animations off";return M.Status end
 		if not bind() then return M.Status end
 		local root=character:FindFirstChild("HumanoidRootPart")
@@ -78,7 +80,6 @@ return function(player, Utils, bank)
 		if phase=="charging" then label="Crouch"
 		elseif phase=="slamming" then label="Slam"
 		elseif phase=="roaring" then label="Emote"
-		elseif phase=="dodging" then label="Run"
 		elseif phase=="airborne" then label=root.AssemblyLinearVelocity.Y < -12 and "Fall" or "Leap"
 		elseif phase=="ready" then
 			if humanoid.FloorMaterial==Enum.Material.Air or humanoid.PlatformStand or humanoid.Sit
@@ -104,7 +105,6 @@ return function(player, Utils, bank)
 		if not track.IsPlaying then pcall(function() track:Play(label=="Leap" and .06 or .16,1,1);track:AdjustWeight(1,.16) end) end
 		local speed=1
 		if phase=="charging" then speed=.35+.5*math.clamp(power or 0,0,1)
-		elseif phase=="dodging" then speed=1.65
 		elseif label=="Slam" then speed=1.3
 		elseif label=="Leap" then speed=.85
 		elseif label=="Run" or label=="Walk" then
@@ -112,7 +112,18 @@ return function(player, Utils, bank)
 			speed=math.clamp(Vector3.new(velocity.X,0,velocity.Z).Magnitude/(label=="Run" and 24 or 12),.7,1.5)
 		end
 		pcall(function() track:AdjustSpeed(speed) end)
-		M.Status=label.." native track · "..tostring(slot.Source)
+		M.Status=label.." native track · "..tostring(slot.Source)..(phase=="charging" and crouch and " / "..crouch.Status or "")
+		return M.Status
+	end
+	function M.Update(phase,power)
+		local status=updateNative(phase,power)
+		if crouch then
+			local char=Utils.GetCharacter(player)
+			local hum=char and char:FindFirstChildOfClass("Humanoid")
+			if not stopped and M.Enabled and phase=="charging" and hum and hum.Health>0 then crouch.Update(char,power)
+			else crouch.Clear() end
+		end
+		if phase=="charging" and crouch then M.Status=status.." / "..crouch.Status.." ("..crouch.Count.." joints)" end
 		return M.Status
 	end
 	function M.SetEnabled(on)
