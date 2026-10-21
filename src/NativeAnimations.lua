@@ -78,6 +78,7 @@ return function(player, Utils, bank)
 		if phase=="charging" then label="Crouch"
 		elseif phase=="slamming" then label="Slam"
 		elseif phase=="roaring" then label="Emote"
+		elseif phase=="dodging" then label="Run"
 		elseif phase=="airborne" then label=root.AssemblyLinearVelocity.Y < -12 and "Fall" or "Leap"
 		elseif phase=="ready" then
 			if humanoid.FloorMaterial==Enum.Material.Air or humanoid.PlatformStand or humanoid.Sit
@@ -95,13 +96,22 @@ return function(player, Utils, bank)
 		local track=slot.Track
 		if current~=slot then
 			M.StopAll();current=slot
-			local ok,err=pcall(function() track:Play(.12,1,1);track:AdjustWeight(1,.12) end)
+			local ok,err=pcall(function() track:Play(label=="Leap" and .06 or .16,1,1);track:AdjustWeight(1,.16) end)
 			if not ok then errors[label]=tostring(err);bank.Fail(slot.Id,tostring(err));M.Status="Playback failed: "..label;return M.Status end
 		end
 		if track.Length<=0 then M.Status="Loading native "..label.."; no local pose substitute";return M.Status end
 		if not track.IsPlaying and not track.Looped then M.Status=label.." native clip finished";return M.Status end
-		if not track.IsPlaying then pcall(function() track:Play(.12,1,1);track:AdjustWeight(1,.12) end) end
-		if phase=="charging" then pcall(function() track:AdjustSpeed(.4+.4*math.clamp(power or 0,0,1)) end) end
+		if not track.IsPlaying then pcall(function() track:Play(label=="Leap" and .06 or .16,1,1);track:AdjustWeight(1,.16) end) end
+		local speed=1
+		if phase=="charging" then speed=.35+.5*math.clamp(power or 0,0,1)
+		elseif phase=="dodging" then speed=1.65
+		elseif label=="Slam" then speed=1.3
+		elseif label=="Leap" then speed=.85
+		elseif label=="Run" or label=="Walk" then
+			local velocity=root.AssemblyLinearVelocity
+			speed=math.clamp(Vector3.new(velocity.X,0,velocity.Z).Magnitude/(label=="Run" and 24 or 12),.7,1.5)
+		end
+		pcall(function() track:AdjustSpeed(speed) end)
 		M.Status=label.." native track · "..tostring(slot.Source)
 		return M.Status
 	end

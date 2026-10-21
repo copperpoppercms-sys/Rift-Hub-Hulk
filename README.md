@@ -1,4 +1,4 @@
-# Rift Hulk · 4.0 — native animation and movement
+# Rift Hulk · 4.1 — native animation and movement
 
 Hulk character controller for **Rift Hub · Hero / Villain**, credited to **N0VA_0100**.
 
@@ -6,7 +6,24 @@ Hulk character controller for **Rift Hub · Hero / Villain**, credited to **N0VA
 loadstring(game:HttpGet("https://raw.githubusercontent.com/copperpoppercms-sys/Rift-Hub-Hulk/main/execute.lua?cb=" .. tostring(os.time())))()
 ```
 
-## What changed
+## Expanded moveset in 4.1
+
+Seven added movement abilities sit below the original leap controls. The compact dock scales to smaller viewports; buttons animate on hover/press and show remaining cooldowns. Original Rift branding and N0VA_0100 credits remain.
+
+| Ability | Behavior | Keyboard |
+| --- | --- | --- |
+| Sidestep L / R | Camera-relative sideways burst, 76 studs/sec | Buttons |
+| Backstep | Burst away from camera-facing direction, 76 studs/sec | B |
+| Gamma Rush | Forward burst, 100 studs/sec | V |
+| Sky Leap | Mostly vertical leap, 155 up / 18 forward | G |
+| Air Surge | Redirect momentum toward camera, 110–170 forward, at least 45 up | T |
+| Air Brake | Reduce horizontal momentum to 18%; preserve vertical speed | Y |
+
+Ground bursts share a 0.65-second cooldown. Sky Leap has a 1.2-second cooldown. Air Surge is available once per owned leap; Air Brake has a 0.8-second cooldown. Air actions require the active leap and an airborne character. All moves respect game input and movement locks. These are requested velocities, not guaranteed travel distances or damage abilities.
+
+Native tracks now blend over 0.16 seconds, with a faster leap start, a heavier slowed ascent, faster meteor playback, and locomotion pace matched to horizontal speed. They reuse the researched clips below; this update does not claim newly authored animation assets. The charge meter has a gamma-green gradient. Shockwaves, rubble and camera effects are decorative; movement uses the real character assembly.
+
+## Native animation behavior
 
 The executable now plays **native AnimationTracks on the character's existing Animator**. The local joint-animation system from v3 is no longer embedded or called. It does not write Motor6D/Bone/AnimationConstraint transforms, create a client-only Animator, or scrub TimePosition to imitate a pose. If a native clip is unavailable, it reports the failure and retains ordinary game animation; there is no local pose substitute.
 

@@ -15,11 +15,15 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 			AirAcceleration = 85, LandingSeconds = 0.38 },
 	}
 	local stopped, connections = false, {}
+	local dockScale
 	local gui, dock, leapButton, fill, percent, caption, boundButton, slamButton, roarButton
 	local activeInput, chargeStart, activeChar, activeRoot, activeHum
 	local flightStart, seenAir, animationNote = 0, false, nil
 	local landingStart, launchSpeed, peakDown = 0, 0, 0
-	local roarStart = 0
+	local roarStart, dodgeStart = 0, 0
+	local cooldowns, abilityButtons = {}, {}
+	local airBoostUsed = false
+	M.AbilityUses = {}
 	local buttonMotion, boundAt, smashAt = {}, -math.huge, -math.huge
 	local effects = EffectsCtor and EffectsCtor(Kit)
 	local function fx(method, ...)
@@ -62,7 +66,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 	cancel = function(text, preserveEffects)
 		activeInput, chargeStart = nil, nil
 		activeChar, activeRoot, activeHum = nil, nil, nil
-		native.StopAll();seenAir=false
+		native.StopAll();seenAir=false;airBoostUsed=false
 		if not preserveEffects then fx("Clear") end
 		M.Power = 0
 		M.Phase = M.Enabled and "ready" or "off"
@@ -138,7 +142,8 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		local boost=math.clamp((power-.8)/.2,0,1);boost=boost*boost*(3-2*boost)
 		upward+=math.max(0,M.Config.FullChargeUp-M.Config.MaxUp)*boost
 		forward+=math.max(0,M.Config.FullChargeForward-M.Config.MaxForward)*boost
-		if quick then forward,upward=M.Config.BoundForward,M.Config.BoundUp end
+		if quick=="sky" then forward,upward=18,155
+		elseif quick then forward,upward=M.Config.BoundForward,M.Config.BoundUp end
 		local targetVelocity=direction*forward+Vector3.new(0,upward,0)
 		local ok,err=pcall(function()
 			local mass=root.AssemblyMass
@@ -148,9 +153,10 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		end)
 		if not ok then M.LastError=tostring(err);cancel("Leap could not launch");return false,M.LastError end
 		M.LastError=nil;M.Launches+=1
-		if quick then M.Bounds+=1;boundAt=os.clock() end
+		if quick==true then M.Bounds+=1;boundAt=os.clock() end
 		M.Motion={Status="Impulse applied; observing travel",Root=root,Origin=root.Position,Started=os.clock(),Requested=targetVelocity,Power=power,Peak=0,Latest=0}
 		flightStart,seenAir,launchSpeed,peakDown=os.clock(),false,forward,0
+		airBoostUsed=false
 		M.Phase="airborne"
 		fx("Pulse",root.Position,power,false,char)
 		updateAnimation();paint()
@@ -198,6 +204,74 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		updateAnimation();paint("HULK SMASH")
 		return true
 	end
+	-- Every action is a single character impulse, never a heartbeat speed/teleport loop.
+	local function available(id)
+		return math.max(0,(cooldowns[id] or 0)-os.clock())
+	end
+	function M.Cooldown(id) return available(id) end
+	local function used(id,seconds)
+		cooldowns[id]=os.clock()+seconds
+		M.AbilityUses[id]=(M.AbilityUses[id] or 0)+1
+	end
+	local function facing(root)
+		local cam=workspace.CurrentCamera
+		local v=(cam and cam.CFrame and cam.CFrame.LookVector) or root.CFrame.LookVector
+		local flat=Vector3.new(v.X,0,v.Z)
+		return flat.Magnitude>.01 and flat.Unit or Vector3.new(0,0,-1)
+	end
+	local function impulse(root,velocity)
+		local ok,err=pcall(function()
+			local mass=root.AssemblyMass
+			assert(mass>0 and mass<math.huge,"Character assembly cannot move")
+			root:ApplyImpulse((velocity-root.AssemblyLinearVelocity)*mass)
+		end)
+		if not ok then M.LastError=tostring(err);paint("Move unavailable");return false end
+		M.LastError=nil
+		M.Motion={Status="Impulse applied; observing travel",Root=root,Origin=root.Position,Started=os.clock(),Requested=velocity,Peak=0,Latest=0}
+		return true
+	end
+	function M.SkyLeap()
+		if stopped or not M.Enabled or M.Phase~="ready" or available("SkyLeap")>0 then return false end
+		local ok=launch(.65,"sky")
+		if ok then used("SkyLeap",1.2);paint("SKY LEAP") end
+		return ok
+	end
+	function M.Dodge(kind)
+		if stopped or not M.Enabled or M.Phase~="ready" or available("Dodge")>0 then return false end
+		if kind~="Left" and kind~="Right" and kind~="Back" and kind~="Rush" then return false end
+		local char,hum,root=body()
+		local reason=blocked(char,hum,root,true)
+		if reason then M.LastError=reason;paint(reason);return false end
+		local forward=facing(root)
+		local right=Vector3.new(-forward.Z,0,forward.X)
+		local direction=kind=="Left" and right*-1 or kind=="Right" and right or kind=="Back" and forward*-1 or forward
+		local speed=kind=="Rush" and 100 or 76
+		if not impulse(root,direction*speed+Vector3.new(0,root.AssemblyLinearVelocity.Y,0)) then return false end
+		activeChar,activeHum,activeRoot=char,hum,root
+		M.Phase="dodging";dodgeStart=os.clock();used("Dodge",.65);used(kind,0)
+		fx("Pulse",root.Position,.3,false,char);updateAnimation();paint(kind=="Rush" and "GAMMA RUSH" or kind:upper().." DODGE")
+		return true
+	end
+	function M.AirBoost()
+		if stopped or not M.Enabled or M.Phase~="airborne" or airBoostUsed then return false end
+		local char,hum,root=body()
+		if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,false) or hum.FloorMaterial~=Enum.Material.Air then return false end
+		local velocity=root.AssemblyLinearVelocity
+		local target=facing(root)*math.min(math.max(launchSpeed,110),170)+Vector3.new(0,math.max(velocity.Y,45),0)
+		if not impulse(root,target) then return false end
+		airBoostUsed=true;launchSpeed=Vector3.new(target.X,0,target.Z).Magnitude
+		used("AirBoost",0);native.StopAll();updateAnimation();fx("Pulse",root.Position,.65,false,char);paint("AIR SURGE · once per leap")
+		return true
+	end
+	function M.AirBrake()
+		if stopped or not M.Enabled or M.Phase~="airborne" or available("AirBrake")>0 then return false end
+		local char,hum,root=body()
+		if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,false) or hum.FloorMaterial~=Enum.Material.Air then return false end
+		local velocity=root.AssemblyLinearVelocity
+		if not impulse(root,Vector3.new(velocity.X*.18,velocity.Y,velocity.Z*.18)) then return false end
+		used("AirBrake",.8);paint("AIR BRAKE · vertical speed preserved")
+		return true
+	end
 	local function steer(hum,root,dt)
 		local move=hum.MoveDirection
 		local input=Vector3.new(move.X,0,move.Z)
@@ -224,19 +298,22 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		local viewport = workspace.CurrentCamera.ViewportSize
 		local x = dock.Position.X.Scale * viewport.X + dock.Position.X.Offset
 		local y = dock.Position.Y.Scale * viewport.Y + dock.Position.Y.Offset
-		local width, height = 216, 264
+		local scale=math.clamp(math.min(1,(viewport.Y-64)/408,(viewport.X-16)/216),.35,1)
+		if dockScale then dockScale.Scale=scale end
+		local width, height = 216*scale, 408*scale
 		dock.Position = UDim2.fromOffset(math.clamp(x, math.min(width + 8, viewport.X - 8), math.max(width + 8, viewport.X - 8)),
 			math.clamp(y, math.min(height + 8, viewport.Y - 45), math.max(height + 8, viewport.Y - 45)))
 	end
 	local function makeGui()
 		if gui then gui.Enabled = true; return end
-		table.clear(buttonMotion)
+		table.clear(buttonMotion);table.clear(abilityButtons)
 		gui = Kit.create("ScreenGui", { Name = "RiftHulkLeap", ResetOnSpawn = false, IgnoreGuiInset = true, DisplayOrder = 910 })
 		local parent = (type(gethui) == "function" and gethui()) or game:GetService("CoreGui")
 		local ok = pcall(function() gui.Parent = parent end)
 		if not ok then gui.Parent = player:WaitForChild("PlayerGui") end
 		dock = Kit.create("Frame", { Name = "HulkLeapDock", AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -22, 1, -100),
-			Size = UDim2.fromOffset(216, 264), BackgroundColor3 = Color3.fromRGB(15, 23, 18), BorderSizePixel = 0 }, gui)
+			Size = UDim2.fromOffset(216, 408), BackgroundColor3 = Color3.fromRGB(15, 23, 18), BorderSizePixel = 0 }, gui)
+		dockScale=Kit.create("UIScale",{Scale=1},dock)
 		Kit.create("UICorner", { CornerRadius = UDim.new(0, 12) }, dock)
 		Kit.create("UIStroke", { Color = Color3.fromRGB(64, 115, 76), Transparency = 0.2, Thickness = 1 }, dock)
 		local grip = Kit.create("Frame", { Size = UDim2.new(1, -36, 0, 30), BackgroundTransparency = 1, Active = true }, dock)
@@ -247,7 +324,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		end
 		Kit.create("TextLabel", { Position = UDim2.fromOffset(Brand and 34 or 12, 0), Size = UDim2.new(1, Brand and -34 or -12, 1, 0), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextSize = 11, TextColor3 = Color3.fromRGB(152, 221, 164),
-			Text = "HULK / NATIVE · 4.0", TextXAlignment = Enum.TextXAlignment.Left }, grip)
+			Text = "HULK / NATIVE · 4.1", TextXAlignment = Enum.TextXAlignment.Left }, grip)
 		local close = Kit.create("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -6, 0, 4), Size = UDim2.fromOffset(28, 26),
 			BackgroundTransparency = 1, Text = "×", TextSize = 20, TextColor3 = Kit.SUB }, dock)
 		leapButton = Kit.create("TextButton", { Name = "HoldLeap", Position = UDim2.fromOffset(12, 36), Size = UDim2.fromOffset(132, 90),
@@ -259,6 +336,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		Kit.create("UICorner", { CornerRadius = UDim.new(0, 5) }, bar)
 		fill = Kit.create("Frame", { Name = "PowerFill", AnchorPoint = Vector2.new(0, 1), Position = UDim2.fromScale(0, 1), Size = UDim2.fromScale(1, 0),
 			BackgroundColor3 = Color3.fromRGB(99, 217, 124), BorderSizePixel = 0 }, bar)
+		Kit.create("UIGradient",{Rotation=0,Color=ColorSequence.new(Color3.fromRGB(51,155,78),Color3.fromRGB(178,255,132))},fill)
 		percent = Kit.create("TextLabel", { Name = "ChargePercent", Position = UDim2.fromOffset(170, 149), Size = UDim2.fromOffset(32, 26), BackgroundTransparency = 1,
 			FontFace = Kit.face("BuilderSans", Enum.FontWeight.Bold), TextSize = 10, TextColor3 = Kit.INK, Text = "0%" }, dock)
 		caption = Kit.create("TextLabel", { Position = UDim2.fromOffset(12, 149), Size = UDim2.fromOffset(154, 26), BackgroundTransparency = 1,
@@ -284,6 +362,28 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 			if button.MouseEnter then connect(button.MouseEnter,function() motion.Hover=true end) end
 			if button.MouseLeave then connect(button.MouseLeave,function() motion.Hover=false end) end
 		end
+		local moves={
+			{"Left","SIDESTEP L",function() return M.Dodge("Left") end,"Dodge"},
+			{"Right","SIDESTEP R",function() return M.Dodge("Right") end,"Dodge"},
+			{"Back","BACKSTEP",function() return M.Dodge("Back") end,"Dodge"},
+			{"Rush","GAMMA RUSH",function() return M.Dodge("Rush") end,"Dodge"},
+			{"SkyLeap","SKY LEAP",M.SkyLeap,"SkyLeap"},
+			{"AirBoost","AIR SURGE",M.AirBoost,"AirBoost"},
+			{"AirBrake","AIR BRAKE",M.AirBrake,"AirBrake"},
+		}
+		for i,move in ipairs(moves) do
+			local button=actionButton(move[1],move[2],12)
+			button.Position=UDim2.fromOffset(12+((i-1)%2)*98,214+math.floor((i-1)/2)*34)
+			button.Size=UDim2.fromOffset(94,30);button.TextSize=10
+			local descriptor={Button=button,Id=move[1],Text=move[2],Cooldown=move[4],PressedAt=-math.huge}
+			table.insert(abilityButtons,descriptor)
+			animateButton(button,function() return os.clock()-descriptor.PressedAt<.16 end)
+			connect(button.Activated,function()
+				if move[3]() then descriptor.PressedAt=os.clock() end
+			end,"Ability "..move[1])
+		end
+		local credit=Kit.create("TextLabel",{Position=UDim2.fromOffset(110,316),Size=UDim2.fromOffset(94,30),BackgroundTransparency=1,
+			Text="N0VA_0100",TextSize=10,TextColor3=Kit.SUB,FontFace=Kit.face("BuilderSans")},dock)
 		animateButton(leapButton,function() return M.Phase=="charging" end)
 		animateButton(boundButton,function() return os.clock()-boundAt<.14 end)
 		animateButton(slamButton,function() return os.clock()-smashAt<.14 end)
@@ -291,14 +391,14 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		connect(boundButton.Activated,M.Bound,"Quick bound")
 		connect(slamButton.Activated,M.Slam,"Downward smash")
 		connect(roarButton.Activated,M.Roar,"Gamma roar")
-		local fxButton=Kit.create("TextButton",{Name="EffectsToggle",Position=UDim2.fromOffset(112,215),Size=UDim2.fromOffset(92,20),
+		local fxButton=Kit.create("TextButton",{Name="EffectsToggle",Position=UDim2.fromOffset(112,357),Size=UDim2.fromOffset(92,20),
 			BackgroundTransparency=1,Text="Effects: On",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
 		connect(fxButton.Activated,function()
 			M.EffectsEnabled=not M.EffectsEnabled
 			fx("SetEnabled",M.EffectsEnabled);fxButton.Text=M.EffectsEnabled and "Effects: On" or "Effects: Off"
 		end)
-		local modeButton=Kit.create("TextButton",{Name="AnimationMode",Position=UDim2.fromOffset(10,215),Size=UDim2.new(.5,-12,0,20),BackgroundTransparency=1,Text="Animations: On",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
-		local reportButton=Kit.create("TextButton",{Name="CopyAnimationReport",Position=UDim2.fromOffset(10,241),Size=UDim2.new(1,-20,0,18),BackgroundTransparency=1,Text="Copy animation report",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
+		local modeButton=Kit.create("TextButton",{Name="AnimationMode",Position=UDim2.fromOffset(10,357),Size=UDim2.new(.5,-12,0,20),BackgroundTransparency=1,Text="Animations: On",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
+		local reportButton=Kit.create("TextButton",{Name="CopyAnimationReport",Position=UDim2.fromOffset(10,383),Size=UDim2.new(1,-20,0,18),BackgroundTransparency=1,Text="Copy animation report",TextSize=10,FontFace=Kit.face("BuilderSans"),TextColor3=Kit.SUB},dock)
 		connect(modeButton.Activated,function()
 			M.AnimationMode=M.AnimationMode=="Native" and "Off" or "Native"
 			native.SetEnabled(M.AnimationMode=="Native")
@@ -354,7 +454,12 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		if input.KeyCode==Enum.KeyCode.Z then begin(input)
 		elseif input.KeyCode==Enum.KeyCode.X then M.Bound()
 		elseif input.KeyCode==Enum.KeyCode.C then M.Slam()
-		elseif input.KeyCode==Enum.KeyCode.R then M.Roar() end
+		elseif input.KeyCode==Enum.KeyCode.R then M.Roar()
+		elseif input.KeyCode==Enum.KeyCode.V then M.Dodge("Rush")
+		elseif input.KeyCode==Enum.KeyCode.B then M.Dodge("Back")
+		elseif input.KeyCode==Enum.KeyCode.G then M.SkyLeap()
+		elseif input.KeyCode==Enum.KeyCode.T then M.AirBoost()
+		elseif input.KeyCode==Enum.KeyCode.Y then M.AirBrake() end
 	end,"Keyboard control") end
 	connect(UIS.InputEnded, function(input)
 		if activeInput and (input == activeInput or (input.UserInputType == Enum.UserInputType.MouseButton1 and activeInput.UserInputType == Enum.UserInputType.MouseButton1)) then
@@ -380,6 +485,14 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		for _,motion in ipairs(buttonMotion) do
 			local target=motion.Pressed() and .95 or motion.Hover and 1.025 or 1
 			motion.Scale.Scale+=(target-motion.Scale.Scale)*(1-math.exp(-18*math.clamp(dt or 1/60,0,.1)))
+		end
+		for _,entry in ipairs(abilityButtons) do
+			local remaining=available(entry.Cooldown)
+			local air=entry.Id=="AirBoost" or entry.Id=="AirBrake"
+			local enabled=air and M.Phase=="airborne" or not air and M.Phase=="ready"
+			if entry.Id=="AirBoost" and airBoostUsed then enabled=false end
+			entry.Button.Text=remaining>.05 and string.format("%s %.1f",entry.Text,remaining) or entry.Text
+			entry.Button.TextColor3=enabled and remaining<=.05 and Kit.INK or Kit.SUB
 		end
 		local char, hum, root = body()
 		observeMotion()
@@ -410,6 +523,9 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 				land(char,hum,root)
 			elseif hum.FloorMaterial~=Enum.Material.Air and elapsed>.5 and not seenAir then cancel("Launch stopped on the ground")
 			elseif elapsed>12 then cancel("Leap ended") end
+		elseif M.Phase=="dodging" then
+			if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,false) then cancel();return end
+			if os.clock()-dodgeStart>=.28 then cancel(nil,true) else updateAnimation() end
 		elseif M.Phase=="roaring" then
 			if char~=activeChar or hum~=activeHum or root~=activeRoot or blocked(char,hum,root,true) then cancel();return end
 			if hum.MoveDirection.Magnitude>.1 or os.clock()-roarStart>=1.35 then cancel(nil,true)
@@ -429,7 +545,7 @@ return function(Utils, Kit, Brand, EffectsCtor, AnimationsCtor)
 		local function safeText(get)
 			local ok,value=pcall(get);return ok and tostring(value) or "unavailable"
 		end
-		return table.concat({"Rift Hub / Hulk / 4.0", "Phase: " .. M.Phase .. " | animations: " .. M.AnimationMode,
+		return table.concat({"Rift Hub / Hulk / 4.1", "Phase: " .. M.Phase .. " | animations: " .. M.AnimationMode,
 			"Rig: " .. (hum and tostring(hum.RigType) or "none"),
 			"Moves: bounds="..M.Bounds.." | smashes="..M.Slams.." | landings="..M.Landings.." | steering steps="..M.AirSteers,
 			"Effects: "..tostring(M.EffectsEnabled).." | last effect error="..tostring(M.LastEffectError),

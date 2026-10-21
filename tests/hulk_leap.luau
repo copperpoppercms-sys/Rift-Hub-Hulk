@@ -41,6 +41,7 @@ cf.__index=function(c,key)
  if key=="Inverse" then return function(self) local v=CFrame.new(-self.X,-self.Y,-self.Z);v.Angle=-self.Angle;return v end end
 end
 cf.__mul=function(a,b) local c=CFrame.new(a.X+b.X,a.Y+b.Y,a.Z+b.Z);c.Angle=a.Angle+b.Angle;return c end
+local ColorSequence={new=function(...) return {...} end}
 local clipboard
 local setclipboard=function(value) clipboard=value end
 local created,failClass={},nil
@@ -269,6 +270,47 @@ check(safe.Phase=="ready","death did not end movement")
 player.CharacterRemoving:Fire();player.Character=character();step(.1)
 check(safe.Phase=="ready","respawn did not reset movement")
 safe.Stop();listenerCleanup()
+-- Expanded moves: grounded direction, shared cooldown, air ownership and locks.
+player.Character=character();local moves=make();moves.SetEnabled(true)
+local h,r=player.Character.hum,player.Character.root
+check(not moves.AirBoost() and not moves.AirBrake(),"air actions worked on ground")
+check(not moves.Dodge("invalid"),"unknown dodge accepted")
+check(moves.Dodge("Left"),"left dodge failed")
+near(r.AssemblyLinearVelocity.X,-76);near(r.AssemblyLinearVelocity.Y,0)
+check(moves.Phase=="dodging" and not moves.Dodge("Right"),"dodge spam accepted")
+step(.3);check(moves.Phase=="ready" and moves.Cooldown("Dodge")>0,"dodge recovery/cooldown failed")
+check(not moves.Dodge("Back"),"shared dodge cooldown bypassed")
+step(.4);check(moves.Dodge("Right"),"right dodge failed")
+near(r.AssemblyLinearVelocity.X,76)
+step(.7);check(moves.Dodge("Back"),"backstep failed");near(r.AssemblyLinearVelocity.Z,76)
+step(.7);check(moves.Dodge("Rush"),"rush failed");near(r.AssemblyLinearVelocity.Z,-100)
+step(.7);h.FloorMaterial=Enum.Material.Air
+check(not moves.Dodge("Left"),"ground dodge worked in air")
+h.FloorMaterial=Enum.Material.Concrete
+player.Character.attributes.LOCKED_INPUTS=true
+check(not moves.SkyLeap() and not moves.Dodge("Left"),"new moves bypassed input lock")
+player.Character.attributes.LOCKED_INPUTS=false
+check(moves.SkyLeap(),"sky leap failed");near(r.AssemblyLinearVelocity.Y,155);near(r.AssemblyLinearVelocity.Z,-18)
+check(not moves.SkyLeap(),"sky leap repeated in flight")
+h.FloorMaterial=Enum.Material.Air;step(.1)
+check(moves.AirBoost(),"air surge failed");near(r.AssemblyLinearVelocity.Z,-110)
+check(not moves.AirBoost(),"air surge repeated in one flight")
+local beforeY=r.AssemblyLinearVelocity.Y
+check(moves.AirBrake(),"air brake failed");near(r.AssemblyLinearVelocity.Y,beforeY);near(r.AssemblyLinearVelocity.Z,-19.8)
+check(not moves.AirBrake(),"air brake ignored cooldown")
+player.Character.attributes.canRun=false
+check(not moves.AirBrake(),"air action bypassed game lock")
+player.Character.attributes.canRun=true
+step(.2);h.FloorMaterial=Enum.Material.Concrete;step(.1);step(.4)
+check(moves.Phase=="ready","new moves did not recover on landing")
+check(moves.Bound(),"bound after new moves failed");h.FloorMaterial=Enum.Material.Air;step(.1)
+check(moves.AirBoost(),"air boost allowance did not reset on next leap")
+moves.Stop();listenerCleanup()
+player.Character=character();local badMass=make();badMass.SetEnabled(true)
+player.Character.root.AssemblyMass=0
+check(not badMass.Dodge("Rush") and badMass.Phase=="ready","invalid assembly accepted")
+check(badMass.Cooldown("Dodge")==0,"failed move consumed cooldown")
+badMass.Stop();listenerCleanup();player.Character=character()
 -- Execute the actual standalone bundle and exercise a native leap and unload.
 local standaloneEnv={}
 local getgenv=function() return standaloneEnv end
@@ -277,7 +319,7 @@ Color3.new=function(...) return {...} end
 local standalone=(function()
 -- STANDALONE
 end)()
-check(standalone.Game=="Hulk" and standalone.Version=="4.0" and standalone.Gui.Parent,"standalone native entry failed")
+check(standalone.Game=="Hulk" and standalone.Version=="4.1" and standalone.Gui.Parent,"standalone native entry failed")
 check(standalone.Bound(),"standalone did not apply real character movement")
 check(activeId("rbxassetid://1083218792"),"standalone native jump missing")
 standalone.Unload()
